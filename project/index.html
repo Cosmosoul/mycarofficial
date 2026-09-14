@@ -1,0 +1,349 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Beater Goes Rogue</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "@/": "./src/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ==================== 启动页 ==================== -->
+<div id="bootScreen">
+  <h1 data-i18n-html="gameTitle">我的<em>超级</em>二手车</h1>
+  <div class="boot-sub" data-i18n="subtitle">手动驾驶 × 自动弹幕 × 肉鸽构筑</div>
+  <div class="boot-hint" data-i18n="tapToStart">点 击 屏 幕 开 始</div>
+  <div class="boot-loading" id="bootLoading" data-i18n="initializing">初始化中…</div>
+</div>
+
+<!-- ==================== 游戏主容器 ==================== -->
+<div id="gameWrapper">
+
+  <!-- ============ HUD ============ -->
+  <div id="hud">
+    <div class="top-bar">
+      <div class="hud-card">
+        <div class="hud-row-bars">
+          <div class="hud-bar hp-bar">
+            <span class="hud-icon">❤</span>
+            <div class="hud-track">
+              <div class="hud-fill" id="hpFill" style="transform:scaleX(1)"></div>
+              <span class="hud-val" id="hpLabel">100/100</span>
+            </div>
+          </div>
+          <div class="hud-bar pt-bar">
+            <span class="hud-icon">◆</span>
+            <div class="hud-track">
+              <div class="hud-fill" id="ptFill" style="transform:scaleX(0)"></div>
+              <span class="hud-val" id="ptLabel">0/100</span>
+            </div>
+          </div>
+        </div>
+        <div class="hud-stats">
+          <span class="hud-stat"><span class="hud-lbl" data-i18n="wave">波次</span><b id="statWave">W1</b></span>
+          <span class="hud-stat"><span class="hud-lbl" data-i18n="kills">击杀</span><b id="statKills">0</b></span>
+          <span class="hud-stat"><span class="hud-lbl" data-i18n="field">场上</span><b id="statField">0</b></span>
+          <span class="hud-stat"><span class="hud-lbl" data-i18n="timeLbl">时间</span><b id="statTime">0:00</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="bossBar">
+      <div class="boss-label">BOSS</div>
+      <div class="bar-wrap"><div class="bar-fill" id="bossFill" style="transform:scaleX(1)"></div></div>
+    </div>
+
+    <div class="skills" id="skillsBar"></div>
+  </div>
+
+  <!-- ============ 触屏控件 ============ -->
+  <button id="pauseBtn">❚❚</button>
+  <div id="joystickBase"><div id="joystickKnob"></div><div id="joystickHint" data-i18n="joystickHint">拖动转向</div></div>
+  <div class="touch-btn round" id="touchThrottle"><span class="tb-txt" data-i18n="btnThrottle">油门</span></div>
+  <div class="touch-btn round" id="touchBrake"><span class="tb-txt" data-i18n="btnBrake">倒车</span></div>
+  <div class="touch-btn oct" id="touchJump" data-i18n="btnJump">跳跃</div>
+  <div class="touch-btn oct" id="touchDodge" data-i18n="btnDodge">闪冲</div>
+
+  <!-- ============ 抽卡 ============ -->
+  <div id="cards"><div class="card-row" id="cardRow"></div></div>
+
+  <!-- ============ 暂停菜单 ============ -->
+  <div id="pauseMenu">
+    <div class="pause-box">
+      <h2 data-i18n="paused">暂 停</h2>
+      <button data-act="resume" data-i18n="resume">继续游戏</button>
+      <button data-act="menu" data-i18n="backToMenu">返回主菜单</button>
+      <div class="settings-title" data-i18n="volumeTitle">音 量 调 节</div>
+      <div class="slider-row"><label data-i18n="sfx">音效</label><input type="range" class="vol-slider" data-type="sfx" min="0" max="100" value="100"><span class="vol-val" data-val="sfx">100</span></div>
+      <div class="slider-row"><label data-i18n="music">音乐</label><input type="range" class="vol-slider" data-type="music" min="0" max="100" value="100"><span class="vol-val" data-val="music">100</span></div>
+      <div class="settings-title" data-i18n="soundTitle">声 音</div>
+      <div class="toggle-row">
+        <span class="toggle-label" data-i18n="engineSound">引擎声浪</span>
+        <button class="toggle-switch" data-engine-toggle="1" aria-label="engine audio"><span></span></button>
+      </div>
+      <div class="settings-title" data-i18n="displayTitle">显 示</div>
+      <button class="fs-btn" data-fs-btn="1">全 屏</button>
+      <div class="settings-title" data-i18n="langTitle">语 言</div>
+      <div class="lang-row">
+        <button class="lang-btn" data-lang="en" title="English">EN</button>
+        <button class="lang-btn" data-lang="zh" title="简体中文">中</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 主菜单 ============ -->
+  <div id="startScreen">
+    <canvas id="menuBgCanvas"></canvas>
+    <h1 data-i18n-html="gameTitle">我的<em>超级</em>二手车</h1>
+    <div class="sub" data-i18n="subtitle">手动驾驶 × 自动弹幕 × 肉鸽构筑</div>
+    <div class="btn-grid">
+      <button class="big-btn primary span2" id="startBtn" data-i18n="startGame">开 始 游 戏</button>
+      <button class="big-btn" id="garageBtn" data-i18n="garageBtn">车 库</button>
+      <button class="big-btn" id="galleryBtn" data-i18n="galleryBtn">鉴 赏</button>
+      <button class="big-btn" id="helpBtn" data-i18n="helpBtn">游戏说明</button>
+      <button class="big-btn" id="settingsBtn" data-i18n="settingsBtn">设 置</button>
+    </div>
+    <div id="langSwitch">
+      <button class="lang-btn" data-lang="en" title="English">EN</button>
+      <button class="lang-btn" data-lang="zh" title="简体中文">中</button>
+    </div>
+  </div>
+
+  <!-- ============ 选关 ============ -->
+  <div id="levelSelectScreen">
+    <h2 data-i18n="selectLevel">选 择 关 卡</h2>
+    <div class="level-grid" id="levelGrid"></div>
+    <div class="page-controls">
+      <button class="page-btn" id="prevPageBtn">◀</button>
+      <span class="page-indicator" id="pageIndicator">1 / 3</span>
+      <button class="page-btn" id="nextPageBtn">▶</button>
+    </div>
+    <button class="big-btn" id="levelBackBtn" data-i18n="backToMainMenu">返回主菜单</button>
+  </div>
+
+  <!-- ============ 关卡目标 ============ -->
+  <div id="levelGoalModal">
+    <div class="goal-box">
+      <div class="goal-lv" id="goalLv">第 1 关</div>
+      <h2 id="goalName">新手试炼</h2>
+      <div class="goal-content">
+        <div class="goal-item"><span class="bullet">▶</span><span><span data-i18n="objective">通关目标：</span><span class="accent" id="goalWaves">通过 2 波僵尸</span></span></div>
+        <div class="goal-item"><span class="bullet">▶</span><span><span data-i18n="density">怪物数量：</span><span class="accent" id="goalMult">正常</span></span></div>
+        <div class="goal-item"><span class="bullet">▶</span><span><span data-i18n="rewardLbl">完成奖励：</span><span class="accent" id="goalReward">解锁下一关</span></span></div>
+        <div class="goal-item"><span class="bullet">▶</span><span><span data-i18n="starCriteria">星级标准：</span><span class="accent" id="goalStars">45s内 ★★★ / 70s内 ★★ / 100s内 ★</span></span></div>
+      </div>
+      <button class="big-btn primary" id="goalConfirmBtn" data-i18n="startChallenge">开 始 挑 战</button>
+      <button class="big-btn" id="goalCancelBtn" data-i18n="cancel" style="margin-top:8px;font-size:12px;padding:9px 16px">取 消</button>
+    </div>
+  </div>
+
+  <!-- ============ 胜利 ============ -->
+  <div id="victoryScreen">
+    <div class="victory-box">
+      <h2 data-i18n="levelClear">关 卡 完 成</h2>
+      <div class="victory-sub" id="victoryLv">第 1 关</div>
+      <div class="victory-stars" id="victoryStars"><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+      <div class="unlock-toast" id="victoryUnlock" style="display:none"></div>
+      <div class="victory-stats">
+        <div class="stat-item"><div class="lbl" data-i18n="timeStat">用时</div><div class="val" id="vicTime">0:00</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="killsStat">击杀</div><div class="val" id="vicKills">0</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="wavesStat">波次</div><div class="val" id="vicWaves">0</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="pointsStat">累计积分</div><div class="val" id="vicPoints">0</div></div>
+      </div>
+      <div class="btn-group">
+        <button class="big-btn primary" id="vicNextBtn" data-i18n="nextLevel">下 一 关</button>
+        <button class="big-btn" id="vicMenuBtn" data-i18n="backToSelect">返 回 选 关</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 失败 ============ -->
+  <div id="overScreen">
+    <div class="over-box">
+      <h2 data-i18n="gameOver">战 斗 结 束</h2>
+      <div class="over-sub" id="overSub">我的超级二手车</div>
+      <div class="over-stats">
+        <div class="stat-item"><div class="lbl" data-i18n="wavesStat">波次</div><div class="val" id="ovWave">0</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="killsStat">击杀</div><div class="val" id="ovKills">0</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="survived">存活</div><div class="val" id="ovTime">0:00</div></div>
+        <div class="stat-item"><div class="lbl" data-i18n="pointsStat">累计积分</div><div class="val" id="ovPoints">0</div></div>
+      </div>
+      <div class="btn-group">
+        <button class="big-btn primary" id="restartBtn" data-i18n="retry">再 来 一 局</button>
+        <button class="big-btn" id="menuBtn" data-i18n="backToSelect">返 回 选 关</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 设置 ============ -->
+  <div id="settingsScreen" class="modal">
+    <div class="settings-box">
+      <h2 data-i18n="settingsTitle">设 置</h2>
+      <div class="settings-title" data-i18n="volumeTitle">音 量 调 节</div>
+      <div class="slider-row"><label data-i18n="sfx">音效</label><input type="range" class="vol-slider" data-type="sfx" min="0" max="100" value="100"><span class="vol-val" data-val="sfx">100</span></div>
+      <div class="slider-row"><label data-i18n="music">音乐</label><input type="range" class="vol-slider" data-type="music" min="0" max="100" value="100"><span class="vol-val" data-val="music">100</span></div>
+      <div class="settings-title" data-i18n="soundTitle">声 音</div>
+      <div class="toggle-row">
+        <span class="toggle-label" data-i18n="engineSound">引擎声浪</span>
+        <button class="toggle-switch" data-engine-toggle="1" aria-label="engine audio"><span></span></button>
+      </div>
+      <div class="settings-title" data-i18n="displayTitle">显 示</div>
+      <button class="fs-btn" data-fs-btn="1">全 屏</button>
+      <button class="big-btn" id="settingsCloseBtn" data-i18n="close" style="margin-top:12px">关 闭</button>
+    </div>
+  </div>
+
+  <!-- ============ 帮助 ============ -->
+  <div id="helpScreen" class="modal">
+    <div class="help-box">
+      <div id="helpBody" data-i18n-html="helpBody"></div>
+      <div class="close-wrap"><button class="big-btn" id="helpCloseBtn" data-i18n="close">关 闭</button></div>
+    </div>
+  </div>
+
+  <!-- ============ 鉴赏 ============ -->
+  <div id="galleryScreen">
+    <div class="gallery-box">
+      <div class="gallery-header">
+        <h2 data-i18n="galleryTitle">鉴 赏</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="big-btn" id="replayStoryBtn" data-i18n="storyBtn" style="padding:7px 13px;font-size:11px;letter-spacing:2px">▶ 剧 情</button>
+          <button class="close-btn" id="galleryCloseBtn">×</button>
+        </div>
+      </div>
+      <div class="gallery-tabbar" id="galleryTabbar">
+        <button class="gtab active" data-gtab="model" data-i18n="tabModels">角 色 图 鉴</button>
+        <button class="gtab" data-gtab="bgm" data-i18n="tabBgm">BGM 鉴 赏</button>
+      </div>
+      <div class="gallery-body">
+
+        <!-- 图鉴：单位 -->
+        <div class="gallery-pane active" id="galleryPaneModel">
+          <div class="gallery-content">
+            <div class="gallery-list" id="galleryList">
+              <div class="gallery-item active" data-type="car" data-i18n="listCar">🚗 座驾</div>
+              <div class="gallery-item" data-type="mob" data-i18n="listMob">🧟 暴徒僵尸</div>
+              <div class="gallery-item" data-type="bomber" data-i18n="listBomber">💥 自爆僵尸</div>
+              <div class="gallery-item" data-type="ranged" data-i18n="listRanged">🎯 远程僵尸</div>
+              <div class="gallery-item" data-type="shield" data-i18n="listShield">🛡️ 盾兵僵尸</div>
+              <div class="gallery-item" data-type="elite" data-i18n="listElite">💜 精英僵尸</div>
+              <div class="gallery-item" data-type="boss" data-i18n="listBoss">👑 僵尸之王</div>
+            </div>
+            <div class="gallery-viewer">
+              <canvas id="viewerCanvas"></canvas>
+              <div class="viewer-hint" data-i18n="dragRotate">拖 动 旋 转</div>
+              <div class="viewer-info">
+                <div class="viewer-name" id="viewerName">超级二手车</div>
+                <div class="viewer-desc" id="viewerDesc"></div>
+                <div class="viewer-stats" id="viewerStats"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 图鉴：BGM 播放器 -->
+        <div class="gallery-pane" id="galleryPaneBgm">
+          <div class="bgm-side">
+            <div class="bgm-side-hd">
+              <span class="t" data-i18n="bgmLib">曲 库</span>
+              <span class="n" id="bgmCount">0 / 0</span>
+            </div>
+            <div class="bgm-list" id="bgmList"></div>
+          </div>
+          <div class="bgm-stage">
+            <div class="bgm-deck">
+              <div class="bgm-disc" id="bgmDisc"></div>
+              <div class="bgm-now">
+                <div class="np-lbl"><span data-i18n="nowPlaying">N O W &nbsp;P L A Y I N G</span></div>
+                <div class="np-title" id="bgmTitle">—</div>
+                <div class="np-sub" id="bgmTags"></div>
+              </div>
+            </div>
+            <div class="bgm-viz-wrap"><canvas id="bgmViz"></canvas></div>
+            <div class="bgm-progress">
+              <div class="pg-track"><div class="pg-fill" id="bgmFill"></div></div>
+              <div class="pg-meta">
+                <span id="bgmTime">00:00</span>
+                <span id="bgmBpm">-- BPM</span>
+              </div>
+            </div>
+            <div class="bgm-transport">
+              <button class="bgm-tbtn" id="bgmPrev" title="prev">⏮</button>
+              <button class="bgm-tbtn main" id="bgmPlay" title="play">▶</button>
+              <button class="bgm-tbtn" id="bgmNext" title="next">⏭</button>
+              <button class="bgm-tbtn" id="bgmStop" title="stop">■</button>
+              <div class="bgm-vol">
+                <span class="vl" data-i18n="bgmVolume">音量</span>
+                <input type="range" class="vol-slider" data-type="music" min="0" max="100" value="100" aria-label="music volume">
+              </div>
+            </div>
+            <div class="bgm-tip" id="bgmTip" data-i18n="bgmTip">点 击 曲 目 试 听</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 车库 ============ -->
+  <div id="garageScreen">
+    <div class="gallery-box">
+      <div class="gallery-header">
+        <h2 data-i18n="garageTitle">车 库</h2>
+        <button class="close-btn" id="garageCloseBtn">×</button>
+      </div>
+      <div class="gallery-content">
+        <div class="gallery-list" id="garageList"></div>
+        <div class="garage-viewer">
+          <canvas id="garageCanvas"></canvas>
+          <div class="viewer-hint" data-i18n="dragRotate">拖 动 旋 转</div>
+          <div class="garage-info">
+            <div class="garage-name" id="garageName">轿跑车</div>
+            <div class="garage-desc" id="garageDesc"></div>
+            <div class="garage-bars" id="garageBars"></div>
+            <div class="garage-actions">
+              <button class="big-btn primary" id="garageSelectBtn" data-i18n="useCar" style="flex:1">选 用 此 车</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 剧情 ============ -->
+  <div id="storyScreen">
+    <canvas id="storyCanvas"></canvas>
+    <div id="storyText"></div>
+    <div id="storySkip" data-i18n="storySkip">点 击 跳 过</div>
+  </div>
+
+  <!-- ============ 旋转提示 ============ -->
+  <div id="rotateHint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
+    <div data-i18n="rotateHint">请将手机横过来</div>
+  </div>
+
+  <!-- ============ 特效层 ============ -->
+  <div id="dmgLayer"></div>
+  <div id="whiteFlash"></div>
+  <div id="dangerVignette"></div>
+  <canvas id="speedLines"></canvas>
+  <div id="speedVignette"></div>
+
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
