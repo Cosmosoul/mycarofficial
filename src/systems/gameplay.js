@@ -3,7 +3,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
-import { state, player, emit, on, camera } from '@/core.js';
+import { state, player, emit, on, camera, scene } from '@/core.js';
 import Tuning, {
   LEVELS, progress, recordInfiniteBest, getNewlyUnlockedCars,
 } from '@/config.js';
@@ -31,7 +31,7 @@ import {
   sfxBasic, sfxAoe, sfxShock, sfxHeal, sfxCrit, sfxExecute, sfxLuck,
   sfxThunder, sfxChain, sfxFreeze, sfxEnergy, sfxHealCard, sfxRam,
   sfxKill, sfxHurt, sfxCardSelect, sfxCardPick, sfxGameOver,
-  sfxBossSpawn, sfxDodge, sfxZombieGroan, sfxZombieAttack,
+  sfxBossSpawn, sfxDodge, sfxZombieGroan, sfxZombieAttack, sfxSmash,
   playTone,
 } from '@/audio.js';
 import {
@@ -43,7 +43,7 @@ import {
 import { showUnlockToast } from '@/ui/menus.js';
 
 /* ============================================================
-   1. 技能定义与数值表（已加强）
+   1. 技能定义与数值表
    ============================================================ */
 export const skills = {
   basic:   { lv: 1, cd: 0, max: 15, active: true,  icon: '⚔️' },
@@ -60,18 +60,15 @@ export const skills = {
 };
 
 const SKILL_TABLES = {
-  /* ★ 平A：+30% 伤害 */
   basic: [
     {d:12,cd:0.55},{d:15,cd:0.55},{d:18,cd:0.55},{d:22,cd:0.55},{d:26,cd:0.55},
     {d:30,cd:0.40},{d:34,cd:0.40},{d:38,cd:0.40},{d:44,cd:0.40},{d:50,cd:0.40},
     {d:56,cd:0.30},{d:64,cd:0.30},{d:72,cd:0.30},{d:82,cd:0.30},{d:95,cd:0.30},
   ],
-  /* ★ 群攻：伤害近翻倍，半径 +30%，目标 +30%，CD −30% */
   aoe: [
     {r:12,n:6,d:8,cd:4.0},{r:15,n:6,d:10,cd:4.0},{r:18,n:8,d:13,cd:3.5},{r:22,n:8,d:16,cd:3.5},{r:28,n:10,d:20,cd:3.0},
     {r:34,n:10,d:26,cd:3.0},{r:44,n:12,d:32,cd:2.5},{r:40,n:14,d:40,cd:2.5},{r:48,n:14,d:50,cd:2.0},{r:55,n:16,d:62,cd:2.0},
   ],
-  /* ★ 天雷：倍率翻倍以上 */
   thunder: [
     {p:0.12,m:1.5,cd:3.0},{p:0.16,m:2.0,cd:2.8},{p:0.20,m:2.5,cd:2.6},{p:0.24,m:3.0,cd:2.4},
     {p:0.28,m:3.5,cd:2.2},{p:0.32,m:4.0,cd:2.0},{p:0.36,m:4.5,cd:1.8},{p:0.42,m:5.0,cd:1.5},
@@ -229,7 +226,6 @@ export function dealDamageToEnemy(e, dmg, kind, isCrit = false) {
       e.frozen = 2.0;
     }
     if (skills.chain.active && kind !== 'chain') {
-      /* ★ 连锁半径扩大 + 溅射 65% */
       const radius = [14,16,18,20,22,25,28,32][skills.chain.lv - 1] || 32;
       enemyHash.query(e.pos.x, e.pos.z, radius, queryOut);
       let played = false;
@@ -337,16 +333,18 @@ export function triggerThunder() {
   if (!t.active || t.cd > 0) return;
   const tbl = SKILL_TABLES.thunder[t.lv - 1];
   t.cd = tbl.cd;
-  /* ★ 天雷伤害基于平A满级 × m —— m 已经翻倍，实际伤害 = 95 × 5 = 475 */
   const dmg = (SKILL_TABLES.basic[Math.min(skills.basic.lv, 15) - 1]?.d || 12) * tbl.m;
 
+  /* ★ 蓝紫色系闪电：4 种色度循环，生命 0.55s，每条 3 个分叉 */
+  const THUNDER_PALETTE = [0x8866FF, 0x9A80FF, 0xA070FF, 0x7890FF];
   for (let i = 0; i < 18 + Math.floor(Math.random() * 8); i++) {
     const ex = player.pos.x + (Math.random() - 0.5) * 160;
     const ez = player.pos.z + (Math.random() - 0.5) * 160;
+    const col = THUNDER_PALETTE[i % THUNDER_PALETTE.length];
     spawnLightning(
       new THREE.Vector3(ex, 80, ez),
       new THREE.Vector3(ex + (Math.random() - 0.5) * 12, 0, ez + (Math.random() - 0.5) * 12),
-      0xE0F0FF, 0.16, 2
+      col, 0.55, 3
     );
   }
 
@@ -368,7 +366,7 @@ export function triggerThunder() {
 }
 
 /* ============================================================
-   4. 卡牌 —— 新增「韧体」常驻卡
+   4. 卡牌
    ============================================================ */
 const CARD_POOL_DEFS = [
   { key: 'basic',   icon: '⚔️', numeral: 'I'    },
@@ -409,13 +407,13 @@ export function pickCard(card) {
     emit('dmg:number', { pos: player.pos, value: player.maxHp * 0.3, isCrit: true, color: '#60E080' });
     sfxHealCard();
   } else if (card.type === 'maxhp') {
-    /* ★ 韧体：最大 HP +5% 并回复等量 HP（取整，避免小数） */
+    /* 韧体：最大 HP +5% 并回复等量 HP（取整，避免小数） */
     const boost = Math.max(1, Math.round(player.maxHp * 0.05));
     player.maxHp = Math.round(player.maxHp) + boost;
     player.hp    = Math.min(player.maxHp, Math.round(player.hp) + boost);
     emit('dmg:number', { pos: player.pos, value: boost, isCrit: true, color: '#FF80D0' });
     sfxHealCard();
-  }else {
+  } else {
     const s = skills[card.key];
     s.active = true;
     s.lv = Math.min(s.lv + 1, s.max);
@@ -455,7 +453,6 @@ export function triggerCardSelect() {
   if (missedPicks >= 2) {
     const n = pool.filter(c => c.type === 'skill' && c.currentLv === 0);
     if (n.length > 0) {
-      /* ★ 保证 heal / maxhp 仍在池中 */
       const guarantees = pool.filter(c => c.type === 'heal' || c.type === 'maxhp');
       pool = n.concat(guarantees);
     }
@@ -505,6 +502,15 @@ export function startWave() {
     sfxBossSpawn();
     state.screenShake = 20;
     emit('screen:flash', 0.35);
+  }
+
+  /* ★ 每波次 40% 概率刷新 2-5 个治疗水晶 */
+  if (Math.random() < 0.40) {
+    const count = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      const sp = pickHealCrystalSpawnPoint();
+      if (sp) spawnHealCrystal(sp.x, sp.z);
+    }
   }
 
   emit('hud:update');
@@ -1093,6 +1099,215 @@ function updateUfoBoss(e, dt) {
 }
 
 /* ============================================================
+   ★ 6c. 治疗水晶（每波次概率刷新）
+   ============================================================ */
+const healCrystals = [];
+
+function buildHealCrystalModel() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x40FF88,
+    roughness: 0.08,
+    metalness: 0.45,
+    transparent: true,
+    opacity: 0.88,
+    emissive: 0x20C060,
+    emissiveIntensity: 0.95,
+  });
+
+  const main = new THREE.Mesh(new THREE.OctahedronGeometry(1.4, 0), mat);
+  main.scale.set(1, 1.9, 1);
+  main.position.y = 2.6;
+  main.castShadow = true;
+  g.add(main);
+
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 0), mat);
+    s.scale.set(0.85, 1.4, 0.85);
+    s.position.set(Math.cos(a) * 1.0, 1.2 + Math.random() * 0.7, Math.sin(a) * 1.0);
+    s.rotation.y = Math.random() * Math.PI;
+    s.castShadow = true;
+    g.add(s);
+  }
+
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x80FFB0,
+    transparent: true,
+    opacity: 0.65,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.16, 8, 32), ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.1;
+  g.add(ring);
+
+  return g;
+}
+
+function pickHealCrystalSpawnPoint() {
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 25 + Math.random() * 158;
+    if (r > 185) continue;
+    if (r < terrain.fountainRadius + 5) continue;
+    return { x: Math.cos(angle) * r, z: Math.sin(angle) * r };
+  }
+  return null;
+}
+
+function spawnHealCrystal(x, z) {
+  const group = buildHealCrystalModel();
+
+  /* ★ 倾斜下落：起始点在落点斜上方，水平偏移 = 高度 × tan(倾角) */
+  const startY = 90 + Math.random() * 30;
+  const tiltAngle = 0.40 + Math.random() * 0.35;     /* 23° ~ 43° 相对垂直方向 */
+  const startHorizontal = startY * Math.tan(tiltAngle);
+  const dirAngle = Math.random() * Math.PI * 2;
+  const startX = x + Math.cos(dirAngle) * startHorizontal;
+  const startZ = z + Math.sin(dirAngle) * startHorizontal;
+
+  group.position.set(startX, startY, startZ);
+  scene.add(group);
+
+  healCrystals.push({
+    group,
+    pos: new THREE.Vector3(x, 0, z),
+    startX, startY, startZ,
+    fallTime: 0,
+    fallDuration: 3.5 + Math.random() * 1.5,
+    state: 'falling',
+    bobPhase: Math.random() * Math.PI * 2,
+    emitAccum: 0,
+    lifeTimer: 20.0,
+    fadeTimer: 0,
+  });
+}
+
+function updateHealCrystals(dt) {
+  for (let i = healCrystals.length - 1; i >= 0; i--) {
+    const c = healCrystals[i];
+
+    if (c.state === 'falling') {
+      c.fallTime += dt;
+      const t = Math.min(1, c.fallTime / c.fallDuration);
+      const ease = 1 - Math.pow(1 - t, 2);
+
+      /* 从起始点线性插值到落点 */
+      c.group.position.x = c.startX + (c.pos.x - c.startX) * ease;
+      c.group.position.z = c.startZ + (c.pos.z - c.startZ) * ease;
+      c.group.position.y = c.startY * (1 - ease);
+      c.group.rotation.y += dt * 3.0;
+
+      /* 尾火 */
+      c.emitAccum += dt;
+      if (c.emitAccum > 0.055) {
+        c.emitAccum = 0;
+        const emitPos = c.group.position.clone();
+        emitPos.y += 1.5;
+        spawnBurstParticles(emitPos, 0x40FF88, 3, 6);
+        if (Math.random() < 0.4) {
+          spawnBurstParticles(emitPos, 0x80FFB0, 1, 4);
+        }
+      }
+
+      if (t >= 1) {
+        c.state = 'landed';
+        c.group.position.y = 0;
+        spawnRing(new THREE.Vector3(c.pos.x, 0.2, c.pos.z), 0x60FFA0, 5.5, 0.55);
+        spawnBurstParticles(new THREE.Vector3(c.pos.x, 0.5, c.pos.z), 0x80FFB0, 22, 14);
+        state.screenShake = Math.max(state.screenShake, 10);
+        sfxShock();
+      }
+    } else if (c.state === 'landed') {
+      c.bobPhase += dt * 1.6;
+      c.group.position.y = Math.sin(c.bobPhase) * 0.10;
+      c.group.rotation.y += dt * 0.8;
+
+      const dx = player.pos.x - c.pos.x;
+      const dz = player.pos.z - c.pos.z;
+      const R = 3.6;
+      if (dx * dx + dz * dz < R * R) {
+        const healAmount = Math.max(1, Math.round(player.maxHp * 0.10));
+        player.hp = Math.min(player.maxHp, player.hp + healAmount);
+        emit('dmg:number', {
+          pos: player.pos.clone().add(new THREE.Vector3(0, 1.2, 0)),
+          value: healAmount,
+          isCrit: true,
+          color: '#40FF88',
+        });
+        emit('hud:update');
+
+        const center = new THREE.Vector3(c.pos.x, 1.5, c.pos.z);
+        spawnBurstParticles(center, 0x40FF88, 28, 16);
+        spawnBurstParticles(center, 0x80FFB0, 14, 12);
+        spawnRing(new THREE.Vector3(c.pos.x, 0.3, c.pos.z), 0x60FFA0, 6, 0.6);
+        spawnRing(new THREE.Vector3(c.pos.x, 0.3, c.pos.z), 0xA0FFC8, 4, 0.4);
+        state.screenShake = Math.max(state.screenShake, 14);
+        sfxSmash();
+        sfxHeal();
+        rumbleMedium();
+
+        scene.remove(c.group);
+        c.group.traverse(o => {
+          if (o.isMesh) {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              for (const m of mats) m.dispose();
+            }
+          }
+        });
+        healCrystals.splice(i, 1);
+        continue;
+      }
+
+      c.lifeTimer -= dt;
+      if (c.lifeTimer <= 0) {
+        c.state = 'fading';
+        c.fadeTimer = 0.8;
+      }
+    } else if (c.state === 'fading') {
+      c.fadeTimer -= dt;
+      const scale = Math.max(0, c.fadeTimer / 0.8);
+      c.group.scale.setScalar(scale);
+      c.group.rotation.y += dt * 2.0;
+      if (c.fadeTimer <= 0) {
+        scene.remove(c.group);
+        c.group.traverse(o => {
+          if (o.isMesh) {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              for (const m of mats) m.dispose();
+            }
+          }
+        });
+        healCrystals.splice(i, 1);
+      }
+    }
+  }
+}
+
+function clearHealCrystals() {
+  for (const c of healCrystals) {
+    scene.remove(c.group);
+    c.group.traverse(o => {
+      if (o.isMesh) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) m.dispose();
+        }
+      }
+    });
+  }
+  healCrystals.length = 0;
+}
+
+/* ============================================================
    7. 玩家更新
    ============================================================ */
 export function updatePlayer(dt) {
@@ -1114,6 +1329,7 @@ export function updatePlayer(dt) {
   if (keys['KeyA'] || keys['ArrowLeft']) steerInput += 1;
   if (keys['KeyD'] || keys['ArrowRight']) steerInput -= 1;
   steerInput += _joystickSteer;
+  /* 手柄左摇杆：向右推 → 车向右转，与键盘 D 键同向 */
   if (pad.connected) {
     steerInput -= pad.steerX;
     if (steerInput > 1) steerInput = 1;
@@ -1282,6 +1498,9 @@ export function updatePlayer(dt) {
   const targetFov = baseFov + dodgeProgress * 12 + state.fovKick + speedFov;
   camera.fov += (targetFov - camera.fov) * Math.min(8 * dt, 1);
   camera.updateProjectionMatrix();
+
+  /* ★ 治疗水晶更新 */
+  updateHealCrystals(dt);
 }
 
 export function doDodge() {
@@ -1610,7 +1829,6 @@ export function initGameplay() {
 export function resetGame(mapType) {
   initAudio();
   startEngineSound();
-
   startBGM(pickRandomGameTrack());
 
   state.phase = 'playing';
@@ -1654,7 +1872,7 @@ export function resetGame(mapType) {
   player.camYawOffset = 0;
   player.camPitchOffset = 0;
   player.camLookTimer = 0;
-  /* ★ 恢复默认 maxHp（韧体卡加过的要重置）*/
+  /* 恢复默认 maxHp（韧体卡加过的要重置） */
   player.maxHp = 100;
 
   setTouchPedals(false, false);
@@ -1672,6 +1890,7 @@ export function resetGame(mapType) {
   emit('skillbar:refresh');
 
   resetEnemies();
+  clearHealCrystals();
   emit('fx:clearAll');
 
   rebuildCarMesh();
