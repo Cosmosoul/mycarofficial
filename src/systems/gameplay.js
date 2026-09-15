@@ -43,7 +43,7 @@ import {
 import { showUnlockToast } from '@/ui/menus.js';
 
 /* ============================================================
-   1. 技能定义与数值表
+   1. 技能定义与数值表（已加强）
    ============================================================ */
 export const skills = {
   basic:   { lv: 1, cd: 0, max: 15, active: true,  icon: '⚔️' },
@@ -60,18 +60,21 @@ export const skills = {
 };
 
 const SKILL_TABLES = {
+  /* ★ 平A：+30% 伤害 */
   basic: [
-    {d:10,cd:0.6},{d:12,cd:0.6},{d:14,cd:0.6},{d:16,cd:0.6},{d:20,cd:0.6},
-    {d:22,cd:0.4},{d:24,cd:0.4},{d:26,cd:0.4},{d:30,cd:0.4},{d:35,cd:0.4},
-    {d:38,cd:0.3},{d:42,cd:0.3},{d:48,cd:0.3},{d:54,cd:0.3},{d:60,cd:0.3},
+    {d:12,cd:0.55},{d:15,cd:0.55},{d:18,cd:0.55},{d:22,cd:0.55},{d:26,cd:0.55},
+    {d:30,cd:0.40},{d:34,cd:0.40},{d:38,cd:0.40},{d:44,cd:0.40},{d:50,cd:0.40},
+    {d:56,cd:0.30},{d:64,cd:0.30},{d:72,cd:0.30},{d:82,cd:0.30},{d:95,cd:0.30},
   ],
+  /* ★ 群攻：伤害近翻倍，半径 +30%，目标 +30%，CD −30% */
   aoe: [
-    {r:10,n:5,d:5,cd:5},{r:13,n:5,d:6,cd:5},{r:15,n:6,d:7,cd:5},{r:20,n:5,d:8,cd:5},{r:25,n:8,d:10,cd:4},
-    {r:30,n:5,d:12,cd:4},{r:40,n:10,d:14,cd:4},{r:35,n:10,d:18,cd:4},{r:40,n:11,d:22,cd:3},{r:40,n:12,d:28,cd:3},
+    {r:12,n:6,d:8,cd:4.0},{r:15,n:6,d:10,cd:4.0},{r:18,n:8,d:13,cd:3.5},{r:22,n:8,d:16,cd:3.5},{r:28,n:10,d:20,cd:3.0},
+    {r:34,n:10,d:26,cd:3.0},{r:44,n:12,d:32,cd:2.5},{r:40,n:14,d:40,cd:2.5},{r:48,n:14,d:50,cd:2.0},{r:55,n:16,d:62,cd:2.0},
   ],
+  /* ★ 天雷：倍率翻倍以上 */
   thunder: [
-    {p:0.10,m:0.8,cd:3.0},{p:0.14,m:1.0,cd:2.8},{p:0.18,m:1.2,cd:2.6},{p:0.22,m:1.4,cd:2.4},
-    {p:0.25,m:1.6,cd:2.2},{p:0.28,m:1.8,cd:2.0},{p:0.30,m:2.0,cd:1.8},{p:0.35,m:2.2,cd:1.5},
+    {p:0.12,m:1.5,cd:3.0},{p:0.16,m:2.0,cd:2.8},{p:0.20,m:2.5,cd:2.6},{p:0.24,m:3.0,cd:2.4},
+    {p:0.28,m:3.5,cd:2.2},{p:0.32,m:4.0,cd:2.0},{p:0.36,m:4.5,cd:1.8},{p:0.42,m:5.0,cd:1.5},
   ],
 };
 
@@ -123,8 +126,8 @@ export function getSkillValueDesc(key, lv) {
       return zh ? `${Math.round(t.p * 100)}% 概率 · ${t.m}× 伤害 · CD ${t.cd}s` : `${Math.round(t.p * 100)}% chance · ${t.m}× DMG · CD ${t.cd}s`;
     }
     case 'chain': {
-      const r = [10,11,12,13,14,16,18,20][lv - 1] || 20;
-      return zh ? `溅射半径 ${r}m · 50% 伤害` : `Splash radius ${r}m · 50% DMG`;
+      const r = [14,16,18,20,22,25,28,32][lv - 1] || 32;
+      return zh ? `溅射半径 ${r}m · 65% 伤害` : `Splash radius ${r}m · 65% DMG`;
     }
     case 'freeze': {
       const v = [0.15,0.20,0.25,0.30,0.35,0.40][lv - 1] || 0.40;
@@ -171,7 +174,7 @@ function getExecuteChance(e) {
 function getThunderChance() {
   const t = skills.thunder;
   if (!t.active) return 0;
-  return (SKILL_TABLES.thunder[t.lv - 1]?.p || 0.35) + getLuckBonus();
+  return (SKILL_TABLES.thunder[t.lv - 1]?.p || 0.42) + getLuckBonus();
 }
 function getHealChance() {
   const h = skills.heal;
@@ -226,7 +229,8 @@ export function dealDamageToEnemy(e, dmg, kind, isCrit = false) {
       e.frozen = 2.0;
     }
     if (skills.chain.active && kind !== 'chain') {
-      const radius = [10,11,12,13,14,16,18,20][skills.chain.lv - 1] || 20;
+      /* ★ 连锁半径扩大 + 溅射 65% */
+      const radius = [14,16,18,20,22,25,28,32][skills.chain.lv - 1] || 32;
       enemyHash.query(e.pos.x, e.pos.z, radius, queryOut);
       let played = false;
       for (const other of queryOut) {
@@ -234,7 +238,7 @@ export function dealDamageToEnemy(e, dmg, kind, isCrit = false) {
         const dx = other.pos.x - e.pos.x, dz = other.pos.z - e.pos.z;
         if (dx * dx + dz * dz < radius * radius) {
           if (!played) { sfxChain(); played = true; }
-          other.hp -= final * 0.5;
+          other.hp -= final * 0.65;
           spawnLightning(e.pos.clone().setY(1.5), other.pos.clone().setY(1.5), 0xFFFFC0, 0.18, 2);
           if (other.hp <= 0) killEnemy(other);
         }
@@ -333,11 +337,12 @@ export function triggerThunder() {
   if (!t.active || t.cd > 0) return;
   const tbl = SKILL_TABLES.thunder[t.lv - 1];
   t.cd = tbl.cd;
-  const dmg = (SKILL_TABLES.basic[Math.min(skills.basic.lv, 15) - 1]?.d || 10) * tbl.m;
+  /* ★ 天雷伤害基于平A满级 × m —— m 已经翻倍，实际伤害 = 95 × 5 = 475 */
+  const dmg = (SKILL_TABLES.basic[Math.min(skills.basic.lv, 15) - 1]?.d || 12) * tbl.m;
 
-  for (let i = 0; i < 14 + Math.floor(Math.random() * 7); i++) {
-    const ex = player.pos.x + (Math.random() - 0.5) * 140;
-    const ez = player.pos.z + (Math.random() - 0.5) * 140;
+  for (let i = 0; i < 18 + Math.floor(Math.random() * 8); i++) {
+    const ex = player.pos.x + (Math.random() - 0.5) * 160;
+    const ez = player.pos.z + (Math.random() - 0.5) * 160;
     spawnLightning(
       new THREE.Vector3(ex, 80, ez),
       new THREE.Vector3(ex + (Math.random() - 0.5) * 12, 0, ez + (Math.random() - 0.5) * 12),
@@ -363,7 +368,7 @@ export function triggerThunder() {
 }
 
 /* ============================================================
-   4. 卡牌
+   4. 卡牌 —— 新增「韧体」常驻卡
    ============================================================ */
 const CARD_POOL_DEFS = [
   { key: 'basic',   icon: '⚔️', numeral: 'I'    },
@@ -378,18 +383,20 @@ const CARD_POOL_DEFS = [
   { key: 'freeze',  icon: '❄️', numeral: 'X'    },
   { key: 'energy',  icon: '🔋', numeral: 'XI'   },
   { key: 'healcard',icon: '💖', numeral: 'XII',  isHeal: true },
+  { key: 'toughness',icon:'💗', numeral: 'XIII', isMaxHp: true },
 ];
 
 function buildCardPool() {
   const pool = [];
   for (const def of CARD_POOL_DEFS) {
-    if (def.isHeal) continue;
+    if (def.isHeal || def.isMaxHp) continue;
     const s = skills[def.key];
     if (!s) continue;
     if (!s.active) pool.push({ ...def, currentLv: 0, nextLv: 1, type: 'skill' });
     else if (s.lv < s.max) pool.push({ ...def, currentLv: s.lv, nextLv: s.lv + 1, type: 'skill' });
   }
   pool.push({ ...CARD_POOL_DEFS.find(d => d.isHeal), type: 'heal' });
+  pool.push({ ...CARD_POOL_DEFS.find(d => d.isMaxHp), type: 'maxhp' });
   return pool;
 }
 
@@ -400,6 +407,13 @@ export function pickCard(card) {
   if (card.type === 'heal') {
     player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.3);
     emit('dmg:number', { pos: player.pos, value: player.maxHp * 0.3, isCrit: true, color: '#60E080' });
+    sfxHealCard();
+  } else if (card.type === 'maxhp') {
+    /* ★ 韧体：最大 HP +5% 并回复等量 HP */
+    const boost = player.maxHp * 0.05;
+    player.maxHp += boost;
+    player.hp = Math.min(player.maxHp, player.hp + boost);
+    emit('dmg:number', { pos: player.pos, value: boost, isCrit: true, color: '#FF80D0' });
     sfxHealCard();
   } else {
     const s = skills[card.key];
@@ -440,7 +454,11 @@ export function triggerCardSelect() {
   let pool = buildCardPool();
   if (missedPicks >= 2) {
     const n = pool.filter(c => c.type === 'skill' && c.currentLv === 0);
-    if (n.length > 0) pool = n;
+    if (n.length > 0) {
+      /* ★ 保证 heal / maxhp 仍在池中 */
+      const guarantees = pool.filter(c => c.type === 'heal' || c.type === 'maxhp');
+      pool = n.concat(guarantees);
+    }
   }
 
   const picks = [];
@@ -988,7 +1006,7 @@ export function updateEnemies(dt) {
 }
 
 /* ============================================================
-   6b. 幽浮母舰 BOSS —— 独立 AI
+   6b. 幽浮母舰 BOSS
    ============================================================ */
 const UFO_AIR_HEIGHT = 12;
 const UFO_GROUND_TIME = 4.0;
@@ -1202,13 +1220,11 @@ export function updatePlayer(dt) {
     carMesh.rotation.x += (0 - carMesh.rotation.x) * Math.min(6 * dt, 1);
   }
 
-  /* 手柄 A / X 跳跃闪冲 */
   if (pad.connected) {
     if (pad.jumpPressed) doJump();
     if (pad.dodgePressed) doDodge();
   }
 
-  /* ★ 手柄右摇杆：原地转头效果（相机位置不变，只旋转视线）*/
   if (player.camYawOffset === undefined) {
     player.camYawOffset = 0;
     player.camPitchOffset = 0;
@@ -1219,14 +1235,12 @@ export function updatePlayer(dt) {
     if (lookActive) {
       player.camYawOffset -= pad.lookX * 2.4 * dt;
       const ySign = invertY ? -1 : 1;
-      /* 上推（lookY 负）→ 抬头（camPitchOffset 增加）*/
       player.camPitchOffset -= pad.lookY * 2.4 * dt * ySign;
       player.camYawOffset = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.camYawOffset));
       player.camPitchOffset = Math.max(-0.5, Math.min(0.7, player.camPitchOffset));
       player.camLookTimer = 0;
     } else {
       player.camLookTimer += dt;
-      /* ★ 0.5s 触发，1s 内完成（时间常数 0.33s → 1s 后衰减 ~95%）*/
       if (player.camLookTimer > 0.5) {
         const k = 1 - Math.exp(-3 * dt);
         player.camYawOffset *= (1 - k);
@@ -1237,14 +1251,12 @@ export function updatePlayer(dt) {
     }
   }
 
-  /* 手柄持续加速震动 */
   if (pad.connected && state.phase === 'playing') {
     const spdRatio = Math.abs(player.speed) / C.maxSpeed;
     if (spdRatio > 0.70) startContinuousRumble(0.10, 0.14, 180, 70);
     else stopContinuousRumble();
   }
 
-  /* 相机位置：固定跟随玩家（不随右摇杆偏移）*/
   const camTarget = new THREE.Vector3(
     player.pos.x - Math.sin(player.yaw) * 11,
     player.pos.y + 5.5,
@@ -1252,10 +1264,9 @@ export function updatePlayer(dt) {
   );
   camera.position.lerp(camTarget, 1 - Math.exp(-6 * dt));
 
-  /* 视线方向：绕相机原地旋转 */
   const lookYaw = player.yaw + player.camYawOffset;
   const lookAtDist = 10;
-  const baseLookDown = -4;   /* 相机默认俯视角度 */
+  const baseLookDown = -4;
   const lookAt = new THREE.Vector3(
     camera.position.x + Math.sin(lookYaw) * lookAtDist,
     camera.position.y + baseLookDown + player.camPitchOffset * 10,
@@ -1335,7 +1346,6 @@ export function checkRam(dt) {
 
       spawnBurstParticles(e.pos, 0xFFFFFF, 8, 10);
       dealDamageToEnemy(e, ramDmg, 'ram');
-      /* ★ 每只怪单独发一次撞击震感（有颗粒感）*/
       rumbleHit();
 
       if (skills.shock.active) {
@@ -1644,6 +1654,8 @@ export function resetGame(mapType) {
   player.camYawOffset = 0;
   player.camPitchOffset = 0;
   player.camLookTimer = 0;
+  /* ★ 恢复默认 maxHp（韧体卡加过的要重置）*/
+  player.maxHp = 100;
 
   setTouchPedals(false, false);
   setJoystickSteer(0);
