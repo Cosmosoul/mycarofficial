@@ -5,6 +5,7 @@
    3. 双马达震动（分层强度 + 节流 + panic 急停 + 连续模式）
    4. y 轴翻转 / 震动开关（持久化）
    5. 手柄模式下自动隐藏鼠标光标（2s 后隐）
+   6. 左摇杆导航锁（用于技能卡弹出时要求摇杆回中）
    ============================================================ */
 
 import { emit } from '@/core.js';
@@ -14,8 +15,9 @@ const DEADZONE = 0.18;
 const LOOK_DEADZONE = 0.14;
 const TRIGGER_THRESHOLD = 0.15;
 const NAV_REPEAT_MS = 180;
-const RUMBLE_WINDOW_MS = 55;      // 从 90ms 降到 55ms —— 连撞时有颗粒感
+const RUMBLE_WINDOW_MS = 55;
 const MOUSE_HIDE_MS = 2000;
+const STICK_CENTER_THRESHOLD = 0.30;
 
 const BTN = {
   A: 0, B: 1, X: 2, Y: 3,
@@ -42,6 +44,9 @@ export const pad = {
   navUp: false, navDown: false, navLeft: false, navRight: false,
   navUpHeld: false, navDownHeld: false, navLeftHeld: false, navRightHeld: false,
 
+  /* ★ 左摇杆导航锁：为 true 时摇杆不产生 nav，直到摇杆回中才解锁 */
+  stickNavLocked: false,
+
   _prev: [],
 };
 
@@ -64,6 +69,11 @@ export function setRumbleEnabled(v) {
   rumbleEnabled = !!v;
   save('myCarRumble', rumbleEnabled ? '1' : '0');
   if (!rumbleEnabled) { stopContinuousRumble(); panicRumble(); }
+}
+
+/* ★ 锁定左摇杆导航（技能卡弹出时调用） */
+export function lockStickNav() {
+  pad.stickNavLocked = true;
 }
 
 /* ============================================================
@@ -93,7 +103,6 @@ export function initGamepad() {
   window.addEventListener('gamepadconnected', onConnect);
   window.addEventListener('gamepaddisconnected', onDisconnect);
 
-  /* 失焦 / 切标签页 时急停震动 */
   window.addEventListener('blur', () => panicRumble());
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) panicRumble();
@@ -120,7 +129,7 @@ function onConnect(e) {
   pad._prev = [];
   emit('gamepad:connected', { id: pad.id });
   setTimeout(() => rumble(0.15, 0.30, 100), 80);
-  hideCursor();       /* ★ 连上手柄立刻隐藏鼠标 */
+  hideCursor();
 }
 
 function onDisconnect() {
@@ -133,10 +142,11 @@ function onDisconnect() {
   pad.lbPressed = pad.rbPressed = false;
   pad.navUp = pad.navDown = pad.navLeft = pad.navRight = false;
   pad.navUpHeld = pad.navDownHeld = pad.navLeftHeld = pad.navRightHeld = false;
+  pad.stickNavLocked = false;
   _gamepadRef = null;
   stopContinuousRumble();
   panicRumble();
-  restoreCursor();     /* ★ 断开时恢复光标 */
+  restoreCursor();
   emit('gamepad:disconnected');
 }
 
@@ -178,18 +188,26 @@ export function pollGamepad() {
   let navL = edge(BTN.DLeft);
   let navR = edge(BTN.DRight);
 
-  const nowMs = performance.now();
-  /* ★ 只有 D-pad 都没触发时，摇杆才补位；摇杆有节流，D-pad 每次按下都算 */
+  /* ★ 摇杆导航（带锁 + 回中解锁） */
   if (!navU && !navD && !navL && !navR) {
     const stickX = Math.abs(rawLX) > 0.55 ? rawLX : 0;
     const stickY = Math.abs(rawLY) > 0.55 ? rawLY : 0;
-    const nowMs = performance.now();
-    if ((stickX || stickY) && nowMs - _navTimer > NAV_REPEAT_MS) {
-      _navTimer = nowMs;
-      if (Math.abs(stickX) > Math.abs(stickY)) {
-        if (stickX > 0) navR = true; else navL = true;
-      } else {
-        if (stickY > 0) navD = true; else navU = true;
+
+    if (pad.stickNavLocked) {
+      /* 锁定期内只有摇杆回中才解锁 */
+      if (Math.abs(rawLX) < STICK_CENTER_THRESHOLD
+       && Math.abs(rawLY) < STICK_CENTER_THRESHOLD) {
+        pad.stickNavLocked = false;
+      }
+    } else {
+      const nowMs = performance.now();
+      if ((stickX || stickY) && nowMs - _navTimer > NAV_REPEAT_MS) {
+        _navTimer = nowMs;
+        if (Math.abs(stickX) > Math.abs(stickY)) {
+          if (stickX > 0) navR = true; else navL = true;
+        } else {
+          if (stickY > 0) navD = true; else navU = true;
+        }
       }
     }
   }
@@ -199,6 +217,7 @@ export function pollGamepad() {
   pad.navLeft = navL;
   pad.navRight = navR;
 
+  /* held 状态：D-pad 按住 OR 摇杆推过阈值（held 不受锁影响，滑条可继续用摇杆调值） */
   pad.navUpHeld    = bp(BTN.DUp)    || rawLY < -0.55;
   pad.navDownHeld  = bp(BTN.DDown)  || rawLY >  0.55;
   pad.navLeftHeld  = bp(BTN.DLeft)  || rawLX < -0.55;
@@ -214,7 +233,6 @@ export function rumble(strong = 0.6, weak = 0.4, duration = 120) {
   if (!pad.connected || !rumbleEnabled) return;
   const now = performance.now();
   const inWindow = now - _lastRumbleTime < RUMBLE_WINDOW_MS;
-  /* 同一窗口内只有更强（+0.15）的震动才打断，防止轻震淹没重震 */
   if (inWindow && strong <= _lastRumbleStrength + 0.15) return;
 
   _lastRumbleTime = now;
@@ -241,11 +259,10 @@ export function rumble(strong = 0.6, weak = 0.4, duration = 120) {
   }
 }
 
-/* 分层强度（调整后）*/
-export function rumbleLight()  { rumble(0.18, 0.30,  70); }   // 菜单确认 / 被啃
-export function rumbleHit()    { rumble(0.78, 0.82, 100); }   // ★ 撞僵尸 / 撞碎可破坏物（加强，短促）
-export function rumbleMedium() { rumble(0.55, 0.60, 130); }   // 殉爆 / 玩家跳跃落地
-export function rumbleHeavy()  { rumble(0.95, 0.90, 240); }   // BOSS / 天雷
+export function rumbleLight()  { rumble(0.18, 0.30,  70); }
+export function rumbleHit()    { rumble(0.78, 0.82, 100); }
+export function rumbleMedium() { rumble(0.55, 0.60, 130); }
+export function rumbleHeavy()  { rumble(0.95, 0.90, 240); }
 
 export function rumbleByDistance(dist, maxDist, strong = 0.9, weak = 0.85, dur = 220) {
   const t = Math.max(0, 1 - dist / maxDist);
@@ -253,7 +270,6 @@ export function rumbleByDistance(dist, maxDist, strong = 0.9, weak = 0.85, dur =
   rumble(strong * t, weak * t, dur);
 }
 
-/* 连续轻震：加速到 70% 以上时使用（已降低幅度）*/
 export function startContinuousRumble(strong = 0.10, weak = 0.14, periodMs = 180, durMs = 70) {
   if (!pad.connected || !rumbleEnabled) return;
   stopContinuousRumble();
@@ -271,7 +287,6 @@ export function stopContinuousRumble() {
   if (_continuousTimerHandle) { clearTimeout(_continuousTimerHandle); _continuousTimerHandle = null; }
 }
 
-/* ★ 立即停止一切震动（暂停 / 失焦 / 关开关时调用）*/
 export function panicRumble() {
   stopContinuousRumble();
   const gp = _gamepadRef || (navigator.getGamepads ? [...navigator.getGamepads()].find(p => p && p.connected) : null);
