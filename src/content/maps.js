@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    content/maps.js —— 地图内容目录
    ┌─────────────────────────────────────────────────────────┐
    │ 加一张新地图：                                          │
@@ -78,13 +78,13 @@ export const MAP_META = {
     fogNear: 130, fogFar: 420,
   },
 
-  /* 🔥 地狱 —— 暗红 + 熔岩 */
+  /* 🔥 地狱 —— 暗红 + 熔岩（已调亮：天空/雾/光照/主光颜色） */
   hell: {
-    sky: 0x180408, hemiSky: 0x802020, hemiGround: 0x200608, hemiInt: 0.95,
-    sunCol: 0xFF4020, sunInt: 1.00,
-    roofCol: 0x2A0808, ridgeCol: 0x100404,
-    grid1: 0xC02020, grid2: 0x601010,
-    fogNear: 70, fogFar: 280,
+    sky: 0x3A1018, hemiSky: 0xC87878, hemiGround: 0x5A3020, hemiInt: 1.35,
+    sunCol: 0xFFA060, sunInt: 1.60,
+    roofCol: 0x4A1810, ridgeCol: 0x2A0C08,
+    grid1: 0xE06040, grid2: 0x803020,
+    fogNear: 95, fogFar: 420,
   },
 };
 
@@ -190,7 +190,6 @@ export function makeGroundTexture(type) {
       else { g.addColorStop(0, `rgba(100,80,180,${0.15 + Math.random() * 0.18})`); g.addColorStop(1, 'rgba(100,80,180,0)'); }
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     }
-    /* 螺旋纹 */
     ctx.lineCap = 'round';
     for (let i = 0; i < 16; i++) {
       ctx.strokeStyle = `rgba(${200 + Math.random() * 55 | 0},${140 + Math.random() * 80 | 0},${240 + Math.random() * 15 | 0},${0.10 + Math.random() * 0.16})`;
@@ -204,7 +203,6 @@ export function makeGroundTexture(type) {
       }
       ctx.stroke();
     }
-    /* 星光点 */
     for (let i = 0; i < 260; i++) {
       const a = 0.3 + Math.random() * 0.6;
       ctx.fillStyle = `rgba(255,240,255,${a})`;
@@ -222,7 +220,6 @@ export function makeGroundTexture(type) {
       g.addColorStop(1, 'rgba(255,240,200,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     }
-    /* 金丝 */
     ctx.lineCap = 'round';
     for (let i = 0; i < 30; i++) {
       ctx.strokeStyle = `rgba(${200 + Math.random() * 55 | 0},${160 + Math.random() * 60 | 0},${80 + Math.random() * 60 | 0},${0.22 + Math.random() * 0.32})`;
@@ -236,7 +233,6 @@ export function makeGroundTexture(type) {
       }
       ctx.stroke();
     }
-    /* 亮点 */
     for (let i = 0; i < 400; i++) {
       ctx.fillStyle = `rgba(255,255,250,${0.20 + Math.random() * 0.40})`;
       const s = 1 + Math.random() * 2.5;
@@ -246,7 +242,6 @@ export function makeGroundTexture(type) {
   } else if (type === 'amusement') {
     /* 游乐园：高饱和菱形拼贴 */
     ctx.fillStyle = '#FFE0A0'; ctx.fillRect(0, 0, size, size);
-    /* 菱形格 */
     const diamondSize = 32;
     const colors = ['#FF6AA8', '#FFD040', '#60D0FF', '#80FF80', '#C080FF', '#FF8060'];
     for (let y = -diamondSize; y < size + diamondSize; y += diamondSize) {
@@ -263,30 +258,27 @@ export function makeGroundTexture(type) {
         ctx.fill();
       }
     }
-    /* 白色高光点 */
     for (let i = 0; i < 180; i++) {
       ctx.fillStyle = `rgba(255,255,255,${0.25 + Math.random() * 0.35})`;
       const s = 1 + Math.random() * 3;
       ctx.fillRect(Math.random() * size, Math.random() * size, s, s);
     }
-    /* 轻微暗角 */
     const vg = ctx.createRadialGradient(size / 2, size / 2, size * 0.2, size / 2, size / 2, size * 0.72);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
     vg.addColorStop(1, 'rgba(0,0,0,0.18)');
     ctx.fillStyle = vg; ctx.fillRect(0, 0, size, size);
 
   } else if (type === 'hell') {
-    /* 地狱：黑岩 + 红色裂纹 + 灰烬 */
-    ctx.fillStyle = '#2A0A08'; ctx.fillRect(0, 0, size, size);
+    /* 地狱：暗红岩 + 红色裂纹 + 灰烬（调亮：底色/斑点/灰烬） */
+    ctx.fillStyle = '#5A2018'; ctx.fillRect(0, 0, size, size);
     for (let i = 0; i < 240; i++) {
       const x = Math.random() * size, y = Math.random() * size, r = 6 + Math.random() * 30;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
       const pick = Math.random();
-      if (pick < 0.5) { g.addColorStop(0, `rgba(80,20,16,${0.4 + Math.random() * 0.3})`); g.addColorStop(1, 'rgba(80,20,16,0)'); }
-      else { g.addColorStop(0, `rgba(20,4,4,${0.5 + Math.random() * 0.3})`); g.addColorStop(1, 'rgba(20,4,4,0)'); }
+      if (pick < 0.5) { g.addColorStop(0, `rgba(140,50,35,${0.4 + Math.random() * 0.3})`); g.addColorStop(1, 'rgba(140,50,35,0)'); }
+      else { g.addColorStop(0, `rgba(70,25,18,${0.5 + Math.random() * 0.3})`); g.addColorStop(1, 'rgba(70,25,18,0)'); }
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     }
-    /* 熔岩裂纹 */
     ctx.lineCap = 'round';
     for (let i = 0; i < 42; i++) {
       ctx.strokeStyle = `rgba(255,${40 + Math.random() * 90 | 0},${10 + Math.random() * 30 | 0},${0.55 + Math.random() * 0.40})`;
@@ -300,11 +292,10 @@ export function makeGroundTexture(type) {
       }
       ctx.stroke();
     }
-    /* 灰烬点 */
     for (let i = 0; i < 500; i++) {
       const v = Math.random();
       ctx.fillStyle = v < 0.6
-        ? `rgba(60,30,20,${0.10 + Math.random() * 0.22})`
+        ? `rgba(100,60,40,${0.10 + Math.random() * 0.22})`
         : `rgba(255,${100 + Math.random() * 80 | 0},${30 + Math.random() * 40 | 0},${0.18 + Math.random() * 0.32})`;
       ctx.fillRect(Math.random() * size, Math.random() * size, 1 + Math.random() * 3, 1 + Math.random() * 3);
     }
@@ -484,7 +475,6 @@ export function makeWallTexture(type) {
     grad.addColorStop(0.5, '#F0E0B0');
     grad.addColorStop(1, '#D8C088');
     ctx.fillStyle = grad; ctx.fillRect(0, 0, 256, 256);
-    /* 拱形 */
     ctx.strokeStyle = 'rgba(200,160,80,0.55)';
     ctx.lineWidth = 6;
     for (let i = 0; i < 2; i++) {
@@ -493,14 +483,12 @@ export function makeWallTexture(type) {
       ctx.arc(ax, 256, 56, Math.PI, Math.PI * 2);
       ctx.stroke();
     }
-    /* 竖线 */
     ctx.strokeStyle = 'rgba(200,160,80,0.30)';
     ctx.lineWidth = 2;
     for (let i = 0; i < 5; i++) {
       const x = i * 64;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke();
     }
-    /* 高光 */
     for (let i = 0; i < 320; i++) {
       ctx.fillStyle = `rgba(255,255,240,${0.25 + Math.random() * 0.45})`;
       const s = 1 + Math.random() * 3;
@@ -514,30 +502,27 @@ export function makeWallTexture(type) {
       ctx.fillStyle = bands[i];
       ctx.fillRect(0, i * 52, 256, 52);
     }
-    /* 白点 */
     for (let i = 0; i < 200; i++) {
       const x = Math.random() * 256, y = Math.random() * 256;
       const r = 2 + Math.random() * 4;
       ctx.fillStyle = `rgba(255,255,255,${0.5 + Math.random() * 0.4})`;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     }
-    /* 暗角 */
     const vg = ctx.createRadialGradient(128, 128, 20, 128, 128, 200);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
     vg.addColorStop(1, 'rgba(0,0,0,0.20)');
     ctx.fillStyle = vg; ctx.fillRect(0, 0, 256, 256);
 
   } else if (type === 'hell') {
-    /* 地狱墙：黑石 + 骨白 + 熔岩脉 */
-    ctx.fillStyle = '#1A0508'; ctx.fillRect(0, 0, 256, 256);
+    /* 地狱墙：暗红石 + 骨白 + 熔岩脉（调亮：底色/石块色） */
+    ctx.fillStyle = '#3A1010'; ctx.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 80; i++) {
       const x = Math.random() * 256, y = Math.random() * 256;
       const w = 20 + Math.random() * 44, h = 14 + Math.random() * 30;
       const v = 0.6 + Math.random() * 0.5;
-      ctx.fillStyle = `rgb(${Math.min(255, 60 * v) | 0},${Math.min(255, 20 * v) | 0},${Math.min(255, 18 * v) | 0})`;
+      ctx.fillStyle = `rgb(${Math.min(255, 140 * v) | 0},${Math.min(255, 55 * v) | 0},${Math.min(255, 42 * v) | 0})`;
       ctx.fillRect(x, y, w, h);
     }
-    /* 熔岩脉 */
     ctx.lineCap = 'round';
     for (let i = 0; i < 44; i++) {
       ctx.strokeStyle = `rgba(255,${40 + Math.random() * 90 | 0},${12 + Math.random() * 30 | 0},${0.50 + Math.random() * 0.45})`;
@@ -547,7 +532,6 @@ export function makeWallTexture(type) {
       for (let j = 0; j < 5; j++) { x += (Math.random() - 0.5) * 55; y += (Math.random() - 0.5) * 55; ctx.lineTo(x, y); }
       ctx.stroke();
     }
-    /* 骨白点 */
     for (let i = 0; i < 60; i++) {
       ctx.fillStyle = `rgba(220,210,180,${0.20 + Math.random() * 0.30})`;
       const s = 1 + Math.random() * 3;
