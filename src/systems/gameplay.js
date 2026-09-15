@@ -3,7 +3,6 @@
    ============================================================ */
 
 import * as THREE from 'three';
-import { pad } from '@/gamepad.js';
 import { state, player, emit, on, camera } from '@/core.js';
 import Tuning, {
   LEVELS, progress, recordInfiniteBest, getNewlyUnlockedCars,
@@ -20,6 +19,11 @@ import {
 import { buildTerrain, terrain, checkDestructibles } from '@/world.js';
 import { pickRandomMap } from '@/content/maps.js';
 import { keys } from '@/platform.js';
+import {
+  pad, invertY,
+  rumbleLight, rumbleMedium, rumbleHeavy, rumbleByDistance,
+  startContinuousRumble, stopContinuousRumble,
+} from '@/gamepad.js';
 import {
   initAudio, startEngineSound,
   startBGM, pickRandomGameTrack,
@@ -315,6 +319,7 @@ export function killEnemy(e) {
     spawnRing(e.pos, 0xFFD040, 34, 0.9);
     state.screenShake = 25;
     emit('screen:flash', 0.4);
+    rumbleHeavy();
   } else {
     spawnRing(e.pos, e.color, e.radius * 4, 0.35);
     spawnHitSpark(e.pos.clone().setY(1), e.color);
@@ -354,6 +359,7 @@ export function triggerThunder() {
   emit('screen:flash', 0.55);
   state.screenShake = 16;
   sfxThunder();
+  rumbleHeavy();
 }
 
 /* ============================================================
@@ -589,7 +595,6 @@ export function updateEnemies(dt) {
   for (const e of enemies) {
     if (!e.active) continue;
 
-    /* ---- 惰性初始化新字段 ---- */
     if (e.dashCD === undefined)        e.dashCD = 2 + Math.random() * 2;
     if (e.jumpCD === undefined)        e.jumpCD = 3 + Math.random() * 2;
     if (e.jumpPhase === undefined)     e.jumpPhase = 0;
@@ -602,13 +607,11 @@ export function updateEnemies(dt) {
     if (e.ufoFireCD === undefined)     e.ufoFireCD = 1.5;
     if (e.invulnerable === undefined)  e.invulnerable = false;
 
-    /* ---- 飞碟 BOSS：完全独立逻辑 ---- */
     if (e.isBoss && e.bossKind === 'ufo') {
       updateUfoBoss(e, dt);
       continue;
     }
 
-    /* ---- 空中物理 ---- */
     if (e.airTime > 0) {
       e.vel.y -= Tuning.Physics.gravity * dt;
       e.vel.x *= (1 - Tuning.Physics.airDrag * dt);
@@ -628,7 +631,6 @@ export function updateEnemies(dt) {
         e.roll = 0;
         e.rollSpeed = 0;
 
-        /* 跳击僵尸落地冲击波 */
         if (e.type === 'jumper' && e.jumpPhase === 2) {
           const JR = 7, JD = 24;
           enemyHash.query(e.pos.x, e.pos.z, JR, sepOut);
@@ -658,7 +660,6 @@ export function updateEnemies(dt) {
           e.jumpPhase = 0;
           e.jumpCD = 5 + Math.random() * 2;
         }
-        /* 裂地尸王：巨型冲击波 */
         else if (e.isBoss && e.bossKind === 'slam') {
           const BR = 22, BD = 60;
           enemyHash.query(e.pos.x, e.pos.z, BR, sepOut);
@@ -687,9 +688,12 @@ export function updateEnemies(dt) {
           state.screenShake = 25;
           emit('screen:flash', 0.35);
           sfxThunder();
+          {
+            const distToPlayer = Math.hypot(player.pos.x - e.pos.x, player.pos.z - e.pos.z);
+            rumbleByDistance(distToPlayer, 40, 0.95, 0.9, 220);
+          }
           e.slamPhase = null;
         }
-        /* 普通落地 */
         else {
           spawnRing(e.pos.clone().setY(0.2), e.color, e.isBoss ? 6 : 4.5, 0.35);
           spawnHitSpark(e.pos.clone().setY(0.3), e.color);
@@ -716,7 +720,6 @@ export function updateEnemies(dt) {
       continue;
     }
 
-    /* ---- 裂地尸王：蓄力阶段 ---- */
     if (e.isBoss && e.bossKind === 'slam' && e.slamPhase === 'charge') {
       e.slamChargeT -= dt;
       e.walkPhase += dt * 3;
@@ -731,7 +734,6 @@ export function updateEnemies(dt) {
       continue;
     }
 
-    /* ---- 跳击僵尸：蓄力阶段 ---- */
     if (e.type === 'jumper' && e.jumpPhase === 1) {
       e.jumpChargeT -= dt;
       e.walkPhase += dt * 3;
@@ -756,7 +758,6 @@ export function updateEnemies(dt) {
     const dz = player.pos.z - e.pos.z;
     const distToPlayer = Math.hypot(dx, dz);
 
-    /* ---- 瞬闪僵尸：冷却好了就闪现 ---- */
     if (e.type === 'dasher') {
       e.dashCD -= dt;
       if (e.dashCD <= 0 && distToPlayer < 22 && distToPlayer > 6) {
@@ -771,7 +772,6 @@ export function updateEnemies(dt) {
       }
     }
 
-    /* ---- 跳击僵尸：准备起跳 ---- */
     if (e.type === 'jumper' && e.jumpPhase === 0) {
       e.jumpCD -= dt;
       if (e.jumpCD <= 0 && distToPlayer < 16 && distToPlayer > 3) {
@@ -781,7 +781,6 @@ export function updateEnemies(dt) {
       }
     }
 
-    /* ---- 裂地尸王：准备起跳 ---- */
     if (e.isBoss && e.bossKind === 'slam' && e.slamPhase === null) {
       e.slamCD -= dt;
       if (e.slamCD <= 0 && distToPlayer < 35) {
@@ -792,7 +791,6 @@ export function updateEnemies(dt) {
       }
     }
 
-    /* ---- 追踪 / 环绕 / 侧翼 目标点（含 8m 强制追车） ---- */
     let targetX, targetZ;
     const CLOSE_FORCE_DIST = 8;
     if (e.isBoss) {
@@ -864,6 +862,7 @@ export function updateEnemies(dt) {
         if (player.hitStreak >= 3) { player.protectMode = 8; player.hitStreak = 0; }
         sfxHurt();
         state.screenShake = Math.max(state.screenShake, 5);
+        rumbleLight();
       }
     }
 
@@ -895,7 +894,6 @@ export function updateEnemies(dt) {
     if (e.attackPhase < 0) e.attackPhase = 0;
   }
 
-  /* ---- 僵尸 InstancedMesh 矩阵 / 颜色 写入 ---- */
   let zombieIdx = 0;
   for (const e of enemies) {
     if (!e.active || e.isBoss) continue;
@@ -944,7 +942,6 @@ export function updateEnemies(dt) {
     mesh.instanceColor.needsUpdate = true;
   }
 
-  /* ---- BOSS 渲染 ---- */
   if (state.boss && state.boss.active) {
     const b = state.boss;
 
@@ -1088,7 +1085,6 @@ export function updatePlayer(dt) {
   if (keys['KeyS'] || keys['ArrowDown']) forward -= 1;
   if (_touchThrottle) forward += 1;
   if (_touchBrake) forward -= 1;
-  /* ★ 手柄：右扳机油门、左扳机倒车 */
   if (pad.connected) {
     forward += pad.throttle;
     forward -= pad.brake;
@@ -1100,9 +1096,9 @@ export function updatePlayer(dt) {
   if (keys['KeyA'] || keys['ArrowLeft']) steerInput += 1;
   if (keys['KeyD'] || keys['ArrowRight']) steerInput -= 1;
   steerInput += _joystickSteer;
-  /* ★ 手柄：左摇杆转向 */
+  /* ★ 手柄左摇杆：向右推 → 车向右转，与键盘 D 键同向 */
   if (pad.connected) {
-    steerInput += pad.steerX;
+    steerInput -= pad.steerX;
     if (steerInput > 1) steerInput = 1;
     if (steerInput < -1) steerInput = -1;
   }
@@ -1183,6 +1179,7 @@ export function updatePlayer(dt) {
       spawnRing(player.pos.clone(), 0xFFB060, Tuning.Jump.airStompRange, 0.5);
       state.screenShake = 14;
       sfxShock();
+      rumbleMedium();
     }
   }
 
@@ -1206,17 +1203,59 @@ export function updatePlayer(dt) {
     carMesh.rotation.x += (0 - carMesh.rotation.x) * Math.min(6 * dt, 1);
   }
 
+  /* ★ 手柄：A 跳跃、X 闪冲（边沿触发） */
+  if (pad.connected) {
+    if (pad.jumpPressed) doJump();
+    if (pad.dodgePressed) doDodge();
+  }
+
+  /* ★ 手柄右摇杆视角偏移（局内） */
+  if (player.camYawOffset === undefined) {
+    player.camYawOffset = 0;
+    player.camPitchOffset = 0;
+    player.camLookTimer = 0;
+  }
+  if (pad.connected) {
+    const lookActive = Math.abs(pad.lookX) > 0.05 || Math.abs(pad.lookY) > 0.05;
+    if (lookActive) {
+      player.camYawOffset -= pad.lookX * 2.4 * dt;
+      const ySign = invertY ? -1 : 1;
+      player.camPitchOffset += pad.lookY * 2.4 * dt * ySign;
+      player.camYawOffset = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.camYawOffset));
+      player.camPitchOffset = Math.max(-0.4, Math.min(0.6, player.camPitchOffset));
+      player.camLookTimer = 0;
+    } else {
+      player.camLookTimer += dt;
+      if (player.camLookTimer > 2.0) {
+        const k = 1 - Math.exp(-6 * dt);
+        player.camYawOffset *= (1 - k);
+        player.camPitchOffset *= (1 - k);
+        if (Math.abs(player.camYawOffset) < 0.002) player.camYawOffset = 0;
+        if (Math.abs(player.camPitchOffset) < 0.002) player.camPitchOffset = 0;
+      }
+    }
+  }
+
+  /* ★ 手柄持续加速震动（超过 70% 极速时循环轻振） */
+  if (pad.connected && state.phase === 'playing') {
+    const spdRatio = Math.abs(player.speed) / C.maxSpeed;
+    if (spdRatio > 0.70) startContinuousRumble(0.15, 0.20, 200, 100);
+    else stopContinuousRumble();
+  }
+
+  /* 相机跟随 + FOV 动态（含右摇杆视角偏移） */
+  const camAngle = player.yaw + player.camYawOffset;
   const camTarget = new THREE.Vector3(
-    player.pos.x - Math.sin(player.yaw) * 11,
-    player.pos.y + 5.5,
-    player.pos.z - Math.cos(player.yaw) * 11
+    player.pos.x - Math.sin(camAngle) * 11,
+    player.pos.y + 5.5 + player.camPitchOffset * 8,
+    player.pos.z - Math.cos(camAngle) * 11
   );
   camera.position.lerp(camTarget, 1 - Math.exp(-6 * dt));
 
   const lookAt = new THREE.Vector3(
-    player.pos.x + Math.sin(player.yaw) * 8,
-    player.pos.y + 1.4,
-    player.pos.z + Math.cos(player.yaw) * 8
+    player.pos.x + Math.sin(camAngle) * 8,
+    player.pos.y + 1.4 + player.camPitchOffset * 6,
+    player.pos.z + Math.cos(camAngle) * 8
   );
   camera.lookAt(lookAt);
 
@@ -1227,11 +1266,6 @@ export function updatePlayer(dt) {
   const speedFov = getSpeedFxIntensity() * Tuning.SpeedFx.fovBoost;
   const targetFov = baseFov + dodgeProgress * 12 + state.fovKick + speedFov;
   camera.fov += (targetFov - camera.fov) * Math.min(8 * dt, 1);
-     /* ★ 手柄：A 跳跃、X 闪冲（边沿触发） */
-  if (pad.connected) {
-    if (pad.jumpPressed) doJump();
-    if (pad.dodgePressed) doDodge();
-  }
   camera.updateProjectionMatrix();
 }
 
@@ -1355,6 +1389,7 @@ export function checkRam(dt) {
     spawnRing(new THREE.Vector3(hitX, 0, hitZ), 0xFFFFFF, 4, 0.25);
     spawnHitSpark(new THREE.Vector3(hitX, 1, hitZ), 0xFFFFFF);
     sfxRam();
+    rumbleMedium();
   }
 }
 
@@ -1560,8 +1595,6 @@ export function resetGame(mapType) {
   initAudio();
   startEngineSound();
 
-  /* ★ 每局开始，从游戏曲池（GAME_TRACK_ROTATION）随机挑一首。
-       该池已在 content/music.js 里排除了 menu / levelSelect / storyTheme。 */
   startBGM(pickRandomGameTrack());
 
   state.phase = 'playing';
@@ -1602,9 +1635,13 @@ export function resetGame(mapType) {
   player.hitStreak = 0;
   player.protectMode = 0;
   player.fountainHitCD = 0;
+  player.camYawOffset = 0;
+  player.camPitchOffset = 0;
+  player.camLookTimer = 0;
 
   setTouchPedals(false, false);
   setJoystickSteer(0);
+  stopContinuousRumble();
 
   for (const k of Object.keys(skills)) {
     skills[k].lv = 0;
