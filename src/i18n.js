@@ -156,9 +156,9 @@ export const I18N = {
     card_freeze_name: '冻结', card_freeze_desc: '被攻击的敌人减速',
     card_energy_name: '蓄能', card_energy_desc: '击杀积分加成（抽卡更快）',
     card_healcard_name: '回复', card_healcard_desc: '立即回复 30% 最大 HP',
-    card_toughness_name: 'Toughness', card_toughness_desc: 'Max HP +5%, and heal the same amount',
-    cardMaxHpEffect: 'Max HP +5%',
-    cardInstantPermanent: 'PERMANENT',
+    card_toughness_name: '韧体', card_toughness_desc: '最大生命值 +5%，并回复等量 HP',
+    cardMaxHpEffect: '最大 HP +5%',
+    cardInstantPermanent: '永 久 生 效',
 
     /* 剧情文本 */
     story: [
