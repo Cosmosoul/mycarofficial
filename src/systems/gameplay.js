@@ -21,7 +21,7 @@ import { pickRandomMap } from '@/content/maps.js';
 import { keys } from '@/platform.js';
 import {
   pad, invertY,
-  rumbleLight, rumbleMedium, rumbleHeavy, rumbleByDistance,
+  rumbleLight, rumbleHit, rumbleMedium, rumbleHeavy, rumbleByDistance,
   startContinuousRumble, stopContinuousRumble,
 } from '@/gamepad.js';
 import {
@@ -272,7 +272,6 @@ export function killEnemy(e) {
     spawnBurstParticles(e.pos, e.color, Tuning.Particles.count, Tuning.Particles.speed);
   }
 
-  /* ---- 殉爆僵尸：无差别死亡爆炸 ---- */
   if (e.type === 'suicide') {
     const BLAST_R = 7;
     const BLAST_DMG = 40;
@@ -282,6 +281,7 @@ export function killEnemy(e) {
     state.screenShake = Math.max(state.screenShake, 12);
     emit('screen:flash', 0.25);
     sfxThunder();
+    rumbleMedium();
 
     enemyHash.query(e.pos.x, e.pos.z, BLAST_R, queryOut);
     for (const other of queryOut) {
@@ -1096,7 +1096,6 @@ export function updatePlayer(dt) {
   if (keys['KeyA'] || keys['ArrowLeft']) steerInput += 1;
   if (keys['KeyD'] || keys['ArrowRight']) steerInput -= 1;
   steerInput += _joystickSteer;
-  /* ★ 手柄左摇杆：向右推 → 车向右转，与键盘 D 键同向 */
   if (pad.connected) {
     steerInput -= pad.steerX;
     if (steerInput > 1) steerInput = 1;
@@ -1203,13 +1202,13 @@ export function updatePlayer(dt) {
     carMesh.rotation.x += (0 - carMesh.rotation.x) * Math.min(6 * dt, 1);
   }
 
-  /* ★ 手柄：A 跳跃、X 闪冲（边沿触发） */
+  /* 手柄 A / X 跳跃闪冲 */
   if (pad.connected) {
     if (pad.jumpPressed) doJump();
     if (pad.dodgePressed) doDodge();
   }
 
-  /* ★ 手柄右摇杆视角偏移（局内） */
+  /* ★ 手柄右摇杆：原地转头效果（相机位置不变，只旋转视线）*/
   if (player.camYawOffset === undefined) {
     player.camYawOffset = 0;
     player.camPitchOffset = 0;
@@ -1220,14 +1219,16 @@ export function updatePlayer(dt) {
     if (lookActive) {
       player.camYawOffset -= pad.lookX * 2.4 * dt;
       const ySign = invertY ? -1 : 1;
-      player.camPitchOffset += pad.lookY * 2.4 * dt * ySign;
+      /* 上推（lookY 负）→ 抬头（camPitchOffset 增加）*/
+      player.camPitchOffset -= pad.lookY * 2.4 * dt * ySign;
       player.camYawOffset = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.camYawOffset));
-      player.camPitchOffset = Math.max(-0.4, Math.min(0.6, player.camPitchOffset));
+      player.camPitchOffset = Math.max(-0.5, Math.min(0.7, player.camPitchOffset));
       player.camLookTimer = 0;
     } else {
       player.camLookTimer += dt;
-      if (player.camLookTimer > 2.0) {
-        const k = 1 - Math.exp(-6 * dt);
+      /* ★ 0.5s 触发，1s 内完成（时间常数 0.33s → 1s 后衰减 ~95%）*/
+      if (player.camLookTimer > 0.5) {
+        const k = 1 - Math.exp(-3 * dt);
         player.camYawOffset *= (1 - k);
         player.camPitchOffset *= (1 - k);
         if (Math.abs(player.camYawOffset) < 0.002) player.camYawOffset = 0;
@@ -1236,26 +1237,29 @@ export function updatePlayer(dt) {
     }
   }
 
-  /* ★ 手柄持续加速震动（超过 70% 极速时循环轻振） */
+  /* 手柄持续加速震动 */
   if (pad.connected && state.phase === 'playing') {
     const spdRatio = Math.abs(player.speed) / C.maxSpeed;
-    if (spdRatio > 0.70) startContinuousRumble(0.15, 0.20, 200, 100);
+    if (spdRatio > 0.70) startContinuousRumble(0.10, 0.14, 180, 70);
     else stopContinuousRumble();
   }
 
-  /* 相机跟随 + FOV 动态（含右摇杆视角偏移） */
-  const camAngle = player.yaw + player.camYawOffset;
+  /* 相机位置：固定跟随玩家（不随右摇杆偏移）*/
   const camTarget = new THREE.Vector3(
-    player.pos.x - Math.sin(camAngle) * 11,
-    player.pos.y + 5.5 + player.camPitchOffset * 8,
-    player.pos.z - Math.cos(camAngle) * 11
+    player.pos.x - Math.sin(player.yaw) * 11,
+    player.pos.y + 5.5,
+    player.pos.z - Math.cos(player.yaw) * 11
   );
   camera.position.lerp(camTarget, 1 - Math.exp(-6 * dt));
 
+  /* 视线方向：绕相机原地旋转 */
+  const lookYaw = player.yaw + player.camYawOffset;
+  const lookAtDist = 10;
+  const baseLookDown = -4;   /* 相机默认俯视角度 */
   const lookAt = new THREE.Vector3(
-    player.pos.x + Math.sin(camAngle) * 8,
-    player.pos.y + 1.4 + player.camPitchOffset * 6,
-    player.pos.z + Math.cos(camAngle) * 8
+    camera.position.x + Math.sin(lookYaw) * lookAtDist,
+    camera.position.y + baseLookDown + player.camPitchOffset * 10,
+    camera.position.z + Math.cos(lookYaw) * lookAtDist
   );
   camera.lookAt(lookAt);
 
@@ -1331,6 +1335,8 @@ export function checkRam(dt) {
 
       spawnBurstParticles(e.pos, 0xFFFFFF, 8, 10);
       dealDamageToEnemy(e, ramDmg, 'ram');
+      /* ★ 每只怪单独发一次撞击震感（有颗粒感）*/
+      rumbleHit();
 
       if (skills.shock.active) {
         const spct = [0.20,0.30,0.35,0.50,0.60,0.70,0.85,1.0][skills.shock.lv - 1] || 1.0;
@@ -1374,6 +1380,7 @@ export function checkRam(dt) {
       sfxRam();
       spawnRing(state.boss.pos.clone().setY(0.3), 0xFFD040, 8, 0.35);
       spawnBurstParticles(state.boss.pos, 0xFFFFFF, 12, 12);
+      rumbleHit();
       anyHit = true;
     }
   }
@@ -1389,7 +1396,6 @@ export function checkRam(dt) {
     spawnRing(new THREE.Vector3(hitX, 0, hitZ), 0xFFFFFF, 4, 0.25);
     spawnHitSpark(new THREE.Vector3(hitX, 1, hitZ), 0xFFFFFF);
     sfxRam();
-    rumbleMedium();
   }
 }
 
