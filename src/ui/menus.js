@@ -231,6 +231,9 @@ function openLevelGoal(id) {
   }
   document.getElementById('goalReward').textContent = getLevelRewardText(id);
   document.getElementById('levelGoalModal').classList.add('show');
+
+  /* ★ 每次打开时，清空该弹窗的历史焦点，保证默认落在"开始挑战" */
+  gpFocusedByContext.delete('levelGoal');
 }
 
 /* ============================================================
@@ -512,6 +515,7 @@ function showVictory(payload) {
   }
 
   document.getElementById('victoryScreen').classList.add('show');
+  gpFocusedByContext.delete('victory');
 }
 
 function showGameOver(payload) {
@@ -533,10 +537,11 @@ function showGameOver(payload) {
   document.getElementById('overSub').textContent =
     payload.mode === 'infinite' ? T('endlessLabel') : T('levelLabel', payload.level);
   document.getElementById('overScreen').classList.add('show');
+  gpFocusedByContext.delete('over');
 }
 
 /* ============================================================
-   8. 卡牌 UI —— 支持 heal / maxhp / 普通技能三类
+   8. 卡牌 UI
    ============================================================ */
 function initCardUI() {
   const cardsEl = document.getElementById('cards');
@@ -555,7 +560,6 @@ function initCardUI() {
         effectHTML = `<div class="card-effect"><span class="next">${T('cardHealEffect')}</span></div>`;
         lvLineHTML = `<div class="card-lv">${T('cardImmediate')}</div>`;
       } else if (p.type === 'maxhp') {
-        /* ★ 韧体卡：不显示 Lv 信息 */
         effectHTML = `<div class="card-effect"><span class="next">${T('cardMaxHpEffect')}</span></div>`;
         lvLineHTML = `<div class="card-lv">${T('cardInstantPermanent')}</div>`;
       } else {
@@ -611,11 +615,16 @@ function onGlobalKeydown(e) {
 }
 
 /* ============================================================
-   10. 手柄菜单导航系统
+   10. 手柄菜单导航
    ============================================================ */
 
 let gpFocused = null;
 let gpMode = false;
+let gpLastContext = null;
+const gpFocusedByContext = new Map();
+
+/* ★ 只有这些"持久菜单"会在离开时记住焦点。其它弹窗每次重新打开从 list[0] 开始 */
+const PERSISTENT_CONTEXTS = new Set(['mainMenu', 'pause', 'settings', 'gallery', 'garage', 'bgm', 'levelSelect']);
 
 function gpFocusReset() {
   gpFocused = null;
@@ -631,20 +640,31 @@ function gpApplyFocus(el) {
   }
 }
 
-/* ★ 关键修复：用 offsetParent 判断可见性（不受 opacity/transform 过渡影响） */
 function gpVisible(el) {
   if (!el || !el.isConnected) return false;
   if (el.offsetParent === null) return false;
-  const r = el.getBoundingClientRect();
-  if (r.width === 0 || r.height === 0) return false;
-  /* 视口外视为不可见 */
-  if (r.bottom < 0 || r.top > window.innerHeight) return false;
-  if (r.right < 0 || r.left > window.innerWidth) return false;
-  return true;
+  return el.offsetWidth > 0 || el.offsetHeight > 0;
 }
 
 function gpFilter(list) {
   return list.filter(el => el && gpVisible(el) && !el.disabled);
+}
+
+function gpContextKey() {
+  if (document.getElementById('helpScreen').classList.contains('show')) return 'help';
+  if (document.getElementById('settingsScreen').classList.contains('show')) return 'settings';
+  if (document.getElementById('levelGoalModal').classList.contains('show')) return 'levelGoal';
+  if (document.getElementById('victoryScreen').classList.contains('show')) return 'victory';
+  if (document.getElementById('overScreen').classList.contains('show')) return 'over';
+  if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) return 'pause';
+  if (state.phase === 'card') return 'card';
+  if (document.getElementById('galleryScreen').classList.contains('show')) {
+    return document.getElementById('galleryPaneBgm').classList.contains('active') ? 'bgm' : 'gallery';
+  }
+  if (document.getElementById('garageScreen').classList.contains('show')) return 'garage';
+  if (document.getElementById('levelSelectScreen').classList.contains('show')) return 'levelSelect';
+  if (state.phase === 'menu' && document.getElementById('startScreen').style.display !== 'none') return 'mainMenu';
+  return null;
 }
 
 function gpCollectCandidates() {
@@ -654,12 +674,10 @@ function gpCollectCandidates() {
     return gpFilter([document.getElementById('helpCloseBtn')]);
   }
   if (document.getElementById('settingsScreen').classList.contains('show')) {
-    return gpFilter([
-      ...$('#settingsScreen button, #settingsScreen input[type="range"]'),
-      document.getElementById('settingsCloseBtn'),
-    ]);
+    return gpFilter($('#settingsScreen button, #settingsScreen input[type="range"]'));
   }
   if (document.getElementById('levelGoalModal').classList.contains('show')) {
+    /* ★ 顺序：先"开始挑战"，后"取消" —— 默认焦点落在"开始挑战" */
     return gpFilter([document.getElementById('goalConfirmBtn'), document.getElementById('goalCancelBtn')]);
   }
   if (document.getElementById('victoryScreen').classList.contains('show')) {
@@ -669,9 +687,7 @@ function gpCollectCandidates() {
     return gpFilter([document.getElementById('restartBtn'), document.getElementById('menuBtn')]);
   }
   if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) {
-    return gpFilter([
-      ...$('#pauseMenu button, #pauseMenu input[type="range"]'),
-    ]);
+    return gpFilter($('#pauseMenu button, #pauseMenu input[type="range"]'));
   }
   if (state.phase === 'card') {
     return gpFilter([...document.querySelectorAll('#cardRow .card')]);
@@ -725,7 +741,7 @@ function gpCollectCandidates() {
   return [];
 }
 
-/* ★ 2D 空间导航：横向惩罚从 2.5 降到 1.0（更宽松，允许斜向跳转） */
+/* ★ 空间导航：横向惩罚 3.0 —— 有效防止"往旁边拨却跳到斜上/斜下方" */
 function gpSpatialFind(from, dir, list) {
   if (!from || !from.isConnected) return list[0] || null;
   const fr = from.getBoundingClientRect();
@@ -755,10 +771,30 @@ function gpSpatialFind(from, dir, list) {
       if (dx < 6) continue;
       primary = dx; secondary = Math.abs(dy);
     }
-    const score = primary + secondary * 1.0;
+    const score = primary + secondary * 3.0;
     if (score < bestScore) { bestScore = score; best = el; }
   }
   return best;
+}
+
+function gpMoveFocus(dir, list) {
+  if (!gpFocused || list.length === 0) return;
+  if (list.length === 1) return;
+  const idx = list.indexOf(gpFocused);
+  if (idx < 0) { gpApplyFocus(list[0]); return; }
+
+  let next = gpSpatialFind(gpFocused, dir, list);
+  if (!next) {
+    const forward = (dir === 'down' || dir === 'right');
+    const nextIdx = forward
+      ? (idx + 1) % list.length
+      : (idx - 1 + list.length) % list.length;
+    next = list[nextIdx];
+  }
+  if (next && next !== gpFocused) {
+    gpApplyFocus(next);
+    sfxUI();
+  }
 }
 
 function gpCancel() {
@@ -798,7 +834,7 @@ function gpIsSlider(el) {
 
 function gpTick() {
   if (!pad.connected) {
-    if (gpMode) { gpMode = false; gpFocusReset(); }
+    if (gpMode) { gpMode = false; gpFocusReset(); gpLastContext = null; }
     return;
   }
 
@@ -817,11 +853,28 @@ function gpTick() {
   const list = gpCollectCandidates();
   if (list.length === 0) {
     gpFocusReset();
+    gpLastContext = null;
     return;
   }
 
+  const ctx = gpContextKey();
+  const ctxChanged = (ctx !== gpLastContext);
+  gpLastContext = ctx;
+
   if (!gpFocused || !list.includes(gpFocused)) {
-    gpApplyFocus(list[0]);
+    /* ★ 只对"持久菜单"恢复记忆焦点；一次性弹窗永远回到 list[0] */
+    const useMemory = ctx && PERSISTENT_CONTEXTS.has(ctx);
+    const remembered = useMemory ? gpFocusedByContext.get(ctx) : null;
+    if (remembered && list.includes(remembered)) {
+      gpApplyFocus(remembered);
+    } else {
+      gpApplyFocus(list[0]);
+    }
+  }
+
+  /* 只在持久菜单里记录焦点 */
+  if (ctx && PERSISTENT_CONTEXTS.has(ctx) && gpFocused) {
+    gpFocusedByContext.set(ctx, gpFocused);
   }
 
   if (gpIsSlider(gpFocused)) {
@@ -837,38 +890,20 @@ function gpTick() {
       changed = true;
     }
     if (changed) rumbleLight();
-    if (pad.navUp) {
-      const next = gpSpatialFind(gpFocused, 'up', list);
-      if (next) { gpApplyFocus(next); sfxUI(); }
-    } else if (pad.navDown) {
-      const next = gpSpatialFind(gpFocused, 'down', list);
-      if (next) { gpApplyFocus(next); sfxUI(); }
-    }
+    if (pad.navUp)   gpMoveFocus('up', list);
+    if (pad.navDown) gpMoveFocus('down', list);
   } else {
-    if (pad.navUp)    { const n = gpSpatialFind(gpFocused, 'up',    list); if (n) { gpApplyFocus(n); sfxUI(); } }
-    if (pad.navDown)  { const n = gpSpatialFind(gpFocused, 'down',  list); if (n) { gpApplyFocus(n); sfxUI(); } }
-    if (pad.navLeft)  { const n = gpSpatialFind(gpFocused, 'left',  list); if (n) { gpApplyFocus(n); sfxUI(); } }
-    if (pad.navRight) { const n = gpSpatialFind(gpFocused, 'right', list); if (n) { gpApplyFocus(n); sfxUI(); } }
+    if (pad.navUp)    gpMoveFocus('up', list);
+    if (pad.navDown)  gpMoveFocus('down', list);
+    if (pad.navLeft)  gpMoveFocus('left', list);
+    if (pad.navRight) gpMoveFocus('right', list);
   }
 
   if (pad.confirmPressed) {
     if (gpFocused && gpFocused.isConnected && typeof gpFocused.click === 'function') {
-      const prev = gpFocused;
-      const prevIndex = list.indexOf(prev);
       sfxUI();
       rumbleLight();
-      prev.click();
-      const newList = gpCollectCandidates();
-      if (newList.length > 0) {
-        if (newList.includes(prev)) {
-          gpApplyFocus(prev);
-        } else {
-          const newIdx = Math.min(Math.max(0, prevIndex), newList.length - 1);
-          gpApplyFocus(newList[newIdx]);
-        }
-      } else {
-        gpFocused = null;
-      }
+      gpFocused.click();
     }
   }
 
@@ -919,16 +954,14 @@ function injectGamepadFocusStyle() {
     .gp-focus {
       outline: 3px solid #4FDDC0 !important;
       outline-offset: 4px !important;
-      transform: scale(1.06) !important;
       filter: brightness(1.20) saturate(1.15) !important;
       position: relative;
       z-index: 50;
       animation: gpFocusPulse 1.1s ease-in-out infinite;
-      transition: transform 0.08s ease, filter 0.08s ease;
+      transition: filter 0.08s ease;
     }
     input[type="range"].gp-focus {
       outline-offset: 6px !important;
-      transform: none !important;
       animation: none;
       box-shadow: 0 0 0 3px rgba(79, 221, 192, 0.9), 0 0 22px 4px rgba(79, 221, 192, 0.8) !important;
     }
@@ -957,11 +990,14 @@ export function initMenus() {
     showUnlockToast(T('gamepadConnected'));
     gpMode = true;
     gpFocusReset();
+    gpLastContext = null;
+    gpFocusedByContext.clear();
   });
   on('gamepad:disconnected', () => {
     showUnlockToast(T('gamepadDisconnected'));
     gpMode = false;
     gpFocusReset();
+    gpLastContext = null;
   });
 
   document.addEventListener('mousedown', () => { if (gpMode) { gpMode = false; gpFocusReset(); } }, true);
@@ -971,21 +1007,17 @@ export function initMenus() {
   bindTap(document.getElementById('helpBtn'), () => {
     initAudio(); sfxUI();
     document.getElementById('helpScreen').classList.add('show');
-    gpFocusReset();
   });
   bindTap(document.getElementById('helpCloseBtn'), () => {
     document.getElementById('helpScreen').classList.remove('show');
-    gpFocusReset();
   });
   bindTap(document.getElementById('settingsBtn'), () => {
     initAudio(); sfxUI();
     document.getElementById('settingsScreen').classList.add('show');
     updateFullscreenButtons();
-    gpFocusReset();
   });
   bindTap(document.getElementById('settingsCloseBtn'), () => {
     document.getElementById('settingsScreen').classList.remove('show');
-    gpFocusReset();
   });
   bindTap(document.getElementById('galleryBtn'), () => { initAudio(); sfxUI(); emit('ui:galleryOpen'); });
   bindTap(document.getElementById('garageBtn'),  () => { initAudio(); sfxUI(); emit('ui:garageOpen'); });
