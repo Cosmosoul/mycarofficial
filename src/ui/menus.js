@@ -613,10 +613,12 @@ function onGlobalKeydown(e) {
 }
 
 /* ============================================================
-   10. 手柄菜单导航 —— 坐标锚点式
-   · 每个界面手动定义 {el, r, c} 坐标
-   · up/down/left/right 按坐标找邻居：主方向权重 10，次方向权重 1
-   · 滑条上左右改值；单元素界面上下改为滚动父容器
+   10. 手柄菜单导航 —— 双模式
+   · 主菜单 / 选关：真实坐标网格导航（支持左右切列）
+   · 其他界面：DOM 顺序线性导航（上下/左右 = 前后）
+   · 滑条：左右改值，上下切焦点
+   · 单元素界面：上下滚动父容器
+   · 调试：Console 里 `window.__gpDebug = true` 打开日志
    ============================================================ */
 
 let gpFocused = null;
@@ -661,167 +663,120 @@ function gpContextKey() {
   return null;
 }
 
-/* ★ 每个界面手写 {el, r, c} 坐标 */
-function gpBuildPoints() {
-  const el = (id) => document.getElementById(id);
+/* ★ 候选元素：用宽松选择器直接从 DOM 抓，保证不漏 toggle */
+function gpCollectCandidates() {
   const $ = (sel) => [...document.querySelectorAll(sel)];
-  const out = [];
-  const add = (e, r, c) => { if (e && e.isConnected && !e.disabled) out.push({ el: e, r, c }); };
+  const el = (id) => document.getElementById(id);
+  const keep = (arr) => arr.filter(e => e && e.isConnected && !e.disabled);
 
-  /* 帮助页：只有关闭 */
   if (el('helpScreen').classList.contains('show')) {
-    add(el('helpCloseBtn'), 0, 0);
-    return out;
+    return keep([el('helpCloseBtn')]);
   }
 
-  /* 设置：单列 */
   if (el('settingsScreen').classList.contains('show')) {
-    const items = [
-      $('#settingsScreen .vol-slider[data-type="sfx"]')[0],
-      $('#settingsScreen .vol-slider[data-type="music"]')[0],
-      $('#settingsScreen [data-engine-toggle]')[0],
-      $('#settingsScreen [data-rumble-toggle]')[0],
-      $('#settingsScreen [data-invert-y-toggle]')[0],
-      $('#settingsScreen .fs-btn')[0],
-      el('settingsCloseBtn'),
-    ];
-    items.forEach((e, i) => add(e, i, 0));
-    return out;
+    /* ★ 直接抓全部 button 和 range，DOM 顺序就是 HTML 顺序 */
+    return keep($('#settingsScreen button, #settingsScreen input[type="range"]'));
   }
 
-  /* 暂停：单列 */
   if (state.phase === 'paused' && el('pauseMenu').classList.contains('show')) {
-    const items = [
-      $('#pauseMenu button[data-act="resume"]')[0],
-      $('#pauseMenu button[data-act="menu"]')[0],
-      $('#pauseMenu .vol-slider[data-type="sfx"]')[0],
-      $('#pauseMenu .vol-slider[data-type="music"]')[0],
-      $('#pauseMenu [data-engine-toggle]')[0],
-      $('#pauseMenu [data-rumble-toggle]')[0],
-      $('#pauseMenu [data-invert-y-toggle]')[0],
-      $('#pauseMenu .fs-btn')[0],
-      $('#pauseMenu .lang-btn[data-lang="en"]')[0],
-      $('#pauseMenu .lang-btn[data-lang="zh"]')[0],
-    ];
-    items.forEach((e, i) => add(e, i, 0));
-    return out;
+    return keep($('#pauseMenu button, #pauseMenu input[type="range"]'));
   }
 
-  /* 主菜单：2 列网格 */
-  if (state.phase === 'menu' && el('startScreen').style.display !== 'none') {
-    add(el('startBtn'),    0, 0);
-    add(el('garageBtn'),   1, 0);
-    add(el('galleryBtn'),  1, 1);
-    add(el('helpBtn'),     2, 0);
-    add(el('settingsBtn'), 2, 1);
-    add($('#langSwitch .lang-btn[data-lang="en"]')[0], 3, 0);
-    add($('#langSwitch .lang-btn[data-lang="zh"]')[0], 3, 1);
-    return out;
-  }
-
-  /* 选关：3 列网格 + 翻页 + 返回 */
-  if (el('levelSelectScreen').classList.contains('show')) {
-    const cards = $('#levelGrid .level-card:not(.locked)');
-    cards.forEach((e, i) => add(e, Math.floor(i / 3), i % 3));
-    add(el('prevPageBtn'), 2, 0);
-    add(el('nextPageBtn'), 2, 2);
-    add(el('levelBackBtn'), 3, 1);
-    return out;
-  }
-
-  /* 关卡目标：2 个按钮上下 */
-  if (el('levelGoalModal').classList.contains('show')) {
-    add(el('goalConfirmBtn'), 0, 0);
-    add(el('goalCancelBtn'),  1, 0);
-    return out;
-  }
-
-  /* 胜利 */
-  if (el('victoryScreen').classList.contains('show')) {
-    add(el('vicNextBtn'), 0, 0);
-    add(el('vicMenuBtn'), 1, 0);
-    return out;
-  }
-
-  /* 失败 */
-  if (el('overScreen').classList.contains('show')) {
-    add(el('restartBtn'), 0, 0);
-    add(el('menuBtn'),    1, 0);
-    return out;
-  }
-
-  /* 卡牌：3 张横排 */
   if (state.phase === 'card') {
-    $('.card').forEach((e, i) => add(e, 0, i));
-    return out;
+    return keep($('#cardRow .card'));
   }
 
-  /* 图鉴 */
+  if (el('levelGoalModal').classList.contains('show')) {
+    return keep([el('goalConfirmBtn'), el('goalCancelBtn')]);
+  }
+
+  if (el('victoryScreen').classList.contains('show')) {
+    return keep([el('vicNextBtn'), el('vicMenuBtn')]);
+  }
+
+  if (el('overScreen').classList.contains('show')) {
+    return keep([el('restartBtn'), el('menuBtn')]);
+  }
+
   if (el('galleryScreen').classList.contains('show')) {
     const isBgm = el('galleryPaneBgm').classList.contains('active');
-    const tabs = $('.gtab');
-    tabs.forEach((t, i) => add(t, 0, i));
-    add(el('galleryCloseBtn'), 0, 2);
-
     if (isBgm) {
-      const items = $('#bgmList .bgm-item');
-      items.forEach((it, i) => add(it, 1 + i, 0));
-      const transportRow = 1 + items.length + 1;
-      add(el('bgmPrev'), transportRow, 0);
-      add(el('bgmPlay'), transportRow, 1);
-      add(el('bgmNext'), transportRow, 2);
-      add(el('bgmStop'), transportRow, 3);
-      add($('.bgm-vol .vol-slider')[0], transportRow, 4);
-    } else {
-      const items = $('#galleryList .gallery-item');
-      items.forEach((it, i) => add(it, 1 + i, 0));
+      return keep([
+        ...$('#galleryScreen .gtab'),
+        ...$('#bgmList .bgm-item'),
+        el('bgmPrev'), el('bgmPlay'), el('bgmNext'), el('bgmStop'),
+        ...$('.bgm-vol .vol-slider'),
+        el('galleryCloseBtn'),
+      ]);
     }
-    return out;
+    return keep([
+      ...$('#galleryScreen .gtab'),
+      ...$('#galleryList .gallery-item'),
+      el('galleryCloseBtn'),
+    ]);
   }
 
-  /* 车库：左列列表 + 右上 closeBtn + 右下 selectBtn */
   if (el('garageScreen').classList.contains('show')) {
-    const items = $('#garageList .garage-item');
-    items.forEach((it, i) => add(it, i, 0));
-    add(el('garageCloseBtn'), 0, 1);
-    add(el('garageSelectBtn'), 1, 1);
-    return out;
+    return keep([
+      ...$('#garageList .garage-item'),
+      el('garageSelectBtn'),
+      el('garageCloseBtn'),
+    ]);
   }
 
-  return out;
+  if (el('levelSelectScreen').classList.contains('show')) {
+    return keep([
+      ...$('#levelGrid .level-card:not(.locked)'),
+      el('prevPageBtn'),
+      el('nextPageBtn'),
+      el('levelBackBtn'),
+    ]);
+  }
+
+  if (state.phase === 'menu' && el('startScreen').style.display !== 'none') {
+    return keep([
+      el('startBtn'),
+      el('garageBtn'),
+      el('galleryBtn'),
+      el('helpBtn'),
+      el('settingsBtn'),
+      ...$('#langSwitch .lang-btn'),
+    ]);
+  }
+
+  return [];
 }
 
-/* ★ 坐标锚点找邻居：主方向权重 10，次方向权重 1 */
-function gpFindByDir(fromEl, dir, points) {
-  const fromPt = points.find(p => p.el === fromEl);
-  if (!fromPt) return points[0]?.el || null;
-
+/* 真实坐标的空间导航（只在主菜单 / 选关用） */
+function gpSpatialFind(from, dir, list) {
+  const fr = from.getBoundingClientRect();
+  const fcx = fr.left + fr.width / 2;
+  const fcy = fr.top + fr.height / 2;
   let best = null, bestScore = Infinity;
-  for (const p of points) {
-    if (p === fromPt) continue;
-    const dr = p.r - fromPt.r;
-    const dc = p.c - fromPt.c;
-
+  for (const el of list) {
+    if (el === from) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dx = cx - fcx, dy = cy - fcy;
     let primary, secondary;
     if (dir === 'up') {
-      if (dr >= 0) continue;
-      primary = -dr; secondary = Math.abs(dc);
+      if (dy > -6) continue;
+      primary = -dy; secondary = Math.abs(dx);
     } else if (dir === 'down') {
-      if (dr <= 0) continue;
-      primary = dr; secondary = Math.abs(dc);
+      if (dy < 6) continue;
+      primary = dy; secondary = Math.abs(dx);
     } else if (dir === 'left') {
-      if (dc >= 0) continue;
-      primary = -dc; secondary = Math.abs(dr);
+      if (dx > -6) continue;
+      primary = -dx; secondary = Math.abs(dy);
     } else {
-      if (dc <= 0) continue;
-      primary = dc; secondary = Math.abs(dr);
+      if (dx < 6) continue;
+      primary = dx; secondary = Math.abs(dy);
     }
-
-    const score = primary * 10 + secondary;
-    if (score < bestScore) {
-      bestScore = score;
-      best = p.el;
-    }
+    /* 主方向为主，次方向惩罚 4 —— 严格防止斜向跳 */
+    const score = primary + secondary * 4;
+    if (score < bestScore) { bestScore = score; best = el; }
   }
   return best;
 }
@@ -839,31 +794,49 @@ function gpFindScrollable(fromEl) {
   return null;
 }
 
-function gpMoveFocus(dir, points) {
-  if (!points || points.length === 0) return;
-  const list = points.map(p => p.el);
-
+function gpMove(dir, list) {
+  if (!list.length) return;
   if (!gpFocused || !list.includes(gpFocused)) {
     gpApplyFocus(list[0]);
     return;
   }
 
-  /* 只有一个元素：上下改为滚动父容器 */
+  /* 单元素界面：上下滚动父容器 */
   if (list.length === 1) {
     if (dir === 'up' || dir === 'down') {
       const scroller = gpFindScrollable(list[0]);
-      if (scroller) {
-        scroller.scrollBy({ top: dir === 'up' ? -80 : 80, behavior: 'smooth' });
-      }
+      if (scroller) scroller.scrollBy({ top: dir === 'up' ? -80 : 80, behavior: 'smooth' });
     }
     return;
   }
 
-  const next = gpFindByDir(gpFocused, dir, points);
-  if (next && next !== gpFocused) {
-    gpApplyFocus(next);
-    sfxUI();
+  /* 滑条：左右改值 */
+  if (gpIsSlider(gpFocused) && (dir === 'left' || dir === 'right')) {
+    const step = dir === 'left' ? -5 : 5;
+    gpFocused.value = Math.max(0, Math.min(100, parseInt(gpFocused.value) + step));
+    gpFocused.dispatchEvent(new Event('input', { bubbles: true }));
+    rumbleLight();
+    return;
   }
+
+  /* ★ 主菜单 / 选关：坐标网格导航（支持左右切列） */
+  const ctx = gpContextKey();
+  if (ctx === 'mainMenu' || ctx === 'levelSelect') {
+    const next = gpSpatialFind(gpFocused, dir, list);
+    if (next) { gpApplyFocus(next); sfxUI(); return; }
+    /* 空间导航找不到就退化到线性 */
+  }
+
+  /* ★ 其他界面：DOM 顺序线性前后 */
+  const idx = list.indexOf(gpFocused);
+  let nextIdx;
+  if (dir === 'up' || dir === 'left') {
+    nextIdx = (idx - 1 + list.length) % list.length;
+  } else {
+    nextIdx = (idx + 1) % list.length;
+  }
+  gpApplyFocus(list[nextIdx]);
+  sfxUI();
 }
 
 function gpCancel() {
@@ -918,14 +891,13 @@ function gpTick() {
     return;
   }
 
-  const points = gpBuildPoints();
-  if (points.length === 0) {
+  const list = gpCollectCandidates();
+  if (list.length === 0) {
     gpFocusReset();
     gpLastContext = null;
     return;
   }
 
-  const list = points.map(p => p.el);
   const ctx = gpContextKey();
   const ctxChanged = (ctx !== gpLastContext);
 
@@ -940,7 +912,6 @@ function gpTick() {
       gpApplyFocus(list[0]);
     }
   } else if (!gpFocused || !list.includes(gpFocused)) {
-    /* 焦点元素被销毁（列表重建），用索引恢复 */
     if (gpLastIndex >= 0 && gpLastIndex < list.length) {
       gpApplyFocus(list[gpLastIndex]);
     } else {
@@ -948,35 +919,17 @@ function gpTick() {
     }
   }
 
-  /* 记录索引 */
   const curIdx = list.indexOf(gpFocused);
   if (curIdx >= 0) gpLastIndex = curIdx;
   if (ctx && PERSISTENT_CONTEXTS.has(ctx) && gpFocused) {
     gpFocusedByContext.set(ctx, gpFocused);
   }
 
-  /* 导航 */
-  if (gpIsSlider(gpFocused)) {
-    /* 滑条上左右改值，上下切焦点 */
-    if (pad.navLeftHeld) {
-      gpFocused.value = Math.max(0, parseInt(gpFocused.value) - 5);
-      gpFocused.dispatchEvent(new Event('input', { bubbles: true }));
-      rumbleLight();
-    } else if (pad.navRightHeld) {
-      gpFocused.value = Math.min(100, parseInt(gpFocused.value) + 5);
-      gpFocused.dispatchEvent(new Event('input', { bubbles: true }));
-      rumbleLight();
-    }
-    if (pad.navUp)   gpMoveFocus('up', points);
-    if (pad.navDown) gpMoveFocus('down', points);
-  } else {
-    if (pad.navUp)    gpMoveFocus('up', points);
-    if (pad.navDown)  gpMoveFocus('down', points);
-    if (pad.navLeft)  gpMoveFocus('left', points);
-    if (pad.navRight) gpMoveFocus('right', points);
-  }
+  if (pad.navUp)    gpMove('up', list);
+  if (pad.navDown)  gpMove('down', list);
+  if (pad.navLeft)  gpMove('left', list);
+  if (pad.navRight) gpMove('right', list);
 
-  /* 确认 */
   if (pad.confirmPressed) {
     if (gpFocused && gpFocused.isConnected && typeof gpFocused.click === 'function') {
       sfxUI();
@@ -985,12 +938,10 @@ function gpTick() {
     }
   }
 
-  /* 返回 */
   if (pad.cancelPressed) {
     gpCancel();
   }
 
-  /* LB / RB 切图鉴页签 */
   if (pad.lbPressed || pad.rbPressed) {
     const tabs = [...document.querySelectorAll('.gtab')];
     if (tabs.length > 0) {
@@ -1003,6 +954,16 @@ function gpTick() {
       gpFocused = null;
       gpLastIndex = 0;
     }
+  }
+
+  /* ★ 调试开关：Console 里 window.__gpDebug = true 打开 */
+  if (window.__gpDebug) {
+    console.log(
+      '[gp]', ctx,
+      'count=' + list.length,
+      'idx=' + list.indexOf(gpFocused),
+      'focus=' + (gpFocused && (gpFocused.id || gpFocused.className || gpFocused.tagName))
+    );
   }
 }
 
