@@ -3,6 +3,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { pad } from '@/gamepad.js';
 import { state, player, emit, on, camera } from '@/core.js';
 import Tuning, {
   LEVELS, progress, recordInfiniteBest, getNewlyUnlockedCars,
@@ -1087,11 +1088,24 @@ export function updatePlayer(dt) {
   if (keys['KeyS'] || keys['ArrowDown']) forward -= 1;
   if (_touchThrottle) forward += 1;
   if (_touchBrake) forward -= 1;
+  /* ★ 手柄：右扳机油门、左扳机倒车 */
+  if (pad.connected) {
+    forward += pad.throttle;
+    forward -= pad.brake;
+    if (forward > 1) forward = 1;
+    if (forward < -1) forward = -1;
+  }
 
   let steerInput = 0;
   if (keys['KeyA'] || keys['ArrowLeft']) steerInput += 1;
   if (keys['KeyD'] || keys['ArrowRight']) steerInput -= 1;
   steerInput += _joystickSteer;
+  /* ★ 手柄：左摇杆转向 */
+  if (pad.connected) {
+    steerInput += pad.steerX;
+    if (steerInput > 1) steerInput = 1;
+    if (steerInput < -1) steerInput = -1;
+  }
 
   if (player.dodgeTimer > 0) {
     player.dodgeTimer -= dt;
@@ -1213,6 +1227,11 @@ export function updatePlayer(dt) {
   const speedFov = getSpeedFxIntensity() * Tuning.SpeedFx.fovBoost;
   const targetFov = baseFov + dodgeProgress * 12 + state.fovKick + speedFov;
   camera.fov += (targetFov - camera.fov) * Math.min(8 * dt, 1);
+     /* ★ 手柄：A 跳跃、X 闪冲（边沿触发） */
+  if (pad.connected) {
+    if (pad.jumpPressed) doJump();
+    if (pad.dodgePressed) doDodge();
+  }
   camera.updateProjectionMatrix();
 }
 
