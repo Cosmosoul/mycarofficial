@@ -2,6 +2,7 @@
    ui/viewers.js —— 3D 预览（图鉴 + 车库）
    · 鼠标拖拽 / 触摸拖拽 / 手柄右摇杆旋转
    · y 轴翻转设置适配
+   · 车库：焦点车 → 自动预览；A/点击 → 直接选车
    ============================================================ */
 
 import * as THREE from 'three';
@@ -386,16 +387,26 @@ function garagePreview(id) {
     selBtn.textContent = T('useCar');
     selBtn.classList.add('primary');
   }
+
+  /* ★ 同步左列 active 高亮（不重建列表） */
+  const gList = document.getElementById('garageList');
+  if (gList) {
+    gList.querySelectorAll('.garage-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.id === id);
+    });
+  }
 }
 
 function renderGarageList() {
   const list = document.getElementById('garageList');
+  if (!list) return;
   list.innerHTML = '';
   for (const id of Object.keys(VEHICLES)) {
     const v = VEHICLES[id];
     const unlocked = isVehicleUnlocked(id);
     const el = document.createElement('div');
     el.className = 'garage-item' + (unlocked ? '' : ' locked') + (id === garageCurrentId ? ' active' : '');
+    el.dataset.id = id;
     const ruleText = unlocked ? '' : (CAR_UNLOCK_RULES[id] ? T(CAR_UNLOCK_RULES[id].textKey) : '');
 
     el.innerHTML =
@@ -404,19 +415,23 @@ function renderGarageList() {
         ? (id === selectedCarId ? `<span class="gi-badge">${T('inUse')}</span>` : '')
         : `<span class="gi-lock" title="${ruleText}">🔒</span>`);
 
-    bindTap(el, () => {
+    /* ★ 用原生 click：鼠标 / 触摸 / 手柄 el.click() 都能触发 */
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
       sfxUI();
       garagePreview(id);
+
+      if (!unlocked) return;            /* 未解锁：只预览 */
+      if (id === selectedCarId) return; /* 已选：只预览 */
+
+      setSelectedCarId(id);
+      rebuildCarMesh();
+      sfxCardPick();
       renderGarageList();
-      /* ★ 已解锁的车：点击即直接选用（手柄 A 走这条路径） */
-      if (unlocked && id !== selectedCarId) {
-        setSelectedCarId(id);
-        rebuildCarMesh();
-        sfxCardPick();
-        renderGarageList();
-        garagePreview(id);
-      }
+      garagePreview(id);
     });
+
     list.appendChild(el);
   }
 }
@@ -538,6 +553,13 @@ export function initViewers() {
   });
 
   on('ui:garageOpen', () => { openGarage(); });
+
+  /* ★ 手柄焦点落到车列表项时，menus.js 广播此事件 → 立即预览 */
+  on('garage:focusPreview', ({ id }) => {
+    if (!garageOpen) return;
+    if (id === garageCurrentId) return;
+    garagePreview(id);
+  });
 
   bindTap(document.getElementById('garageCloseBtn'), () => { sfxUI(); closeGarage(); });
   bindTap(document.getElementById('garageSelectBtn'), () => {
