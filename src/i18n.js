@@ -94,6 +94,8 @@ export const I18N = {
 
     /* 设置 / 通用 */
     settingsTitle: '设 置', close: '关 闭',
+    gamepadConnected: '🎮 手柄已连接',
+    gamepadDisconnected: '🎮 手柄已断开',
 
     /* 图鉴 */
     galleryTitle: '鉴 赏',
@@ -311,6 +313,8 @@ export const I18N = {
 
     /* Settings / common */
     settingsTitle: 'SETTINGS', close: 'CLOSE',
+    gamepadConnected: '🎮 Controller connected',
+    gamepadDisconnected: '🎮 Controller disconnected',
 
     /* Gallery */
     galleryTitle: 'GALLERY',
