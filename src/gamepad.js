@@ -35,7 +35,7 @@ export const pad = {
   dodgePressed: false,    // X
   confirmPressed: false,  // A
   cancelPressed: false,   // B
-  pausePressed: false,    // Start / Menu
+  pausePressed: false,    // Start
   navUp: false, navDown: false, navLeft: false, navRight: false,
 
   _prev: [],
