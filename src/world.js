@@ -20,6 +20,7 @@ import {
   groundTexKeyFor, wallTexKeyFor,
 } from '@/content/maps.js';
 import { sfxSmash } from '@/audio.js';
+import { rumbleHit } from '@/gamepad.js';
 import { spawnRing, spawnBurstParticles, spawnHitSpark } from '@/fx.js';
 import Tuning from '@/config.js';
 
@@ -1362,6 +1363,7 @@ export function breakDestructible(d, hitDir) {
   state.hitStop = Tuning.Ram.hitStopDuration;
   state.fovKick = Tuning.Ram.fovKick;
   sfxSmash();
+  rumbleHit();
   player.speed *= 0.93;
   const hitPos = new THREE.Vector3(d.x, 1, d.z);
   spawnRing(hitPos, 0xFFFFFF, 3.5, 0.3);
