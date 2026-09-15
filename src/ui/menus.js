@@ -613,7 +613,10 @@ function onGlobalKeydown(e) {
 }
 
 /* ============================================================
-   10. 手柄菜单导航
+   10. 手柄菜单导航 —— 坐标锚点式
+   · 每个界面手动定义 {el, r, c} 坐标
+   · up/down/left/right 按坐标找邻居：主方向权重 10，次方向权重 1
+   · 滑条上左右改值；单元素界面上下改为滚动父容器
    ============================================================ */
 
 let gpFocused = null;
@@ -641,24 +644,6 @@ function gpApplyFocus(el) {
   }
 }
 
-/* ★ 修复 1：去掉视口裁剪判断；用 rect + display/visibility 检查（允许 opacity 过渡） */
-function gpVisible(el) {
-  if (!el || !el.isConnected) return false;
-  const r = el.getBoundingClientRect();
-  if (r.width <= 0 && r.height <= 0) return false;
-  let n = el;
-  while (n && n !== document.body) {
-    const s = getComputedStyle(n);
-    if (s.display === 'none' || s.visibility === 'hidden') return false;
-    n = n.parentElement;
-  }
-  return true;
-}
-
-function gpFilter(list) {
-  return list.filter(el => el && gpVisible(el) && !el.disabled);
-}
-
 function gpContextKey() {
   if (document.getElementById('helpScreen').classList.contains('show')) return 'help';
   if (document.getElementById('settingsScreen').classList.contains('show')) return 'settings';
@@ -676,116 +661,171 @@ function gpContextKey() {
   return null;
 }
 
-function gpCollectCandidates() {
+/* ★ 每个界面手写 {el, r, c} 坐标 */
+function gpBuildPoints() {
+  const el = (id) => document.getElementById(id);
   const $ = (sel) => [...document.querySelectorAll(sel)];
+  const out = [];
+  const add = (e, r, c) => { if (e && e.isConnected && !e.disabled) out.push({ el: e, r, c }); };
 
-  if (document.getElementById('helpScreen').classList.contains('show')) {
-    return gpFilter([document.getElementById('helpCloseBtn')]);
+  /* 帮助页：只有关闭 */
+  if (el('helpScreen').classList.contains('show')) {
+    add(el('helpCloseBtn'), 0, 0);
+    return out;
   }
-  if (document.getElementById('settingsScreen').classList.contains('show')) {
-    return gpFilter($('#settingsScreen button, #settingsScreen input[type="range"]'));
+
+  /* 设置：单列 */
+  if (el('settingsScreen').classList.contains('show')) {
+    const items = [
+      $('#settingsScreen .vol-slider[data-type="sfx"]')[0],
+      $('#settingsScreen .vol-slider[data-type="music"]')[0],
+      $('#settingsScreen [data-engine-toggle]')[0],
+      $('#settingsScreen [data-rumble-toggle]')[0],
+      $('#settingsScreen [data-invert-y-toggle]')[0],
+      $('#settingsScreen .fs-btn')[0],
+      el('settingsCloseBtn'),
+    ];
+    items.forEach((e, i) => add(e, i, 0));
+    return out;
   }
-  if (document.getElementById('levelGoalModal').classList.contains('show')) {
-    return gpFilter([document.getElementById('goalConfirmBtn'), document.getElementById('goalCancelBtn')]);
+
+  /* 暂停：单列 */
+  if (state.phase === 'paused' && el('pauseMenu').classList.contains('show')) {
+    const items = [
+      $('#pauseMenu button[data-act="resume"]')[0],
+      $('#pauseMenu button[data-act="menu"]')[0],
+      $('#pauseMenu .vol-slider[data-type="sfx"]')[0],
+      $('#pauseMenu .vol-slider[data-type="music"]')[0],
+      $('#pauseMenu [data-engine-toggle]')[0],
+      $('#pauseMenu [data-rumble-toggle]')[0],
+      $('#pauseMenu [data-invert-y-toggle]')[0],
+      $('#pauseMenu .fs-btn')[0],
+      $('#pauseMenu .lang-btn[data-lang="en"]')[0],
+      $('#pauseMenu .lang-btn[data-lang="zh"]')[0],
+    ];
+    items.forEach((e, i) => add(e, i, 0));
+    return out;
   }
-  if (document.getElementById('victoryScreen').classList.contains('show')) {
-    return gpFilter([document.getElementById('vicNextBtn'), document.getElementById('vicMenuBtn')]);
+
+  /* 主菜单：2 列网格 */
+  if (state.phase === 'menu' && el('startScreen').style.display !== 'none') {
+    add(el('startBtn'),    0, 0);
+    add(el('garageBtn'),   1, 0);
+    add(el('galleryBtn'),  1, 1);
+    add(el('helpBtn'),     2, 0);
+    add(el('settingsBtn'), 2, 1);
+    add($('#langSwitch .lang-btn[data-lang="en"]')[0], 3, 0);
+    add($('#langSwitch .lang-btn[data-lang="zh"]')[0], 3, 1);
+    return out;
   }
-  if (document.getElementById('overScreen').classList.contains('show')) {
-    return gpFilter([document.getElementById('restartBtn'), document.getElementById('menuBtn')]);
+
+  /* 选关：3 列网格 + 翻页 + 返回 */
+  if (el('levelSelectScreen').classList.contains('show')) {
+    const cards = $('#levelGrid .level-card:not(.locked)');
+    cards.forEach((e, i) => add(e, Math.floor(i / 3), i % 3));
+    add(el('prevPageBtn'), 2, 0);
+    add(el('nextPageBtn'), 2, 2);
+    add(el('levelBackBtn'), 3, 1);
+    return out;
   }
-  if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) {
-    return gpFilter($('#pauseMenu button, #pauseMenu input[type="range"]'));
+
+  /* 关卡目标：2 个按钮上下 */
+  if (el('levelGoalModal').classList.contains('show')) {
+    add(el('goalConfirmBtn'), 0, 0);
+    add(el('goalCancelBtn'),  1, 0);
+    return out;
   }
+
+  /* 胜利 */
+  if (el('victoryScreen').classList.contains('show')) {
+    add(el('vicNextBtn'), 0, 0);
+    add(el('vicMenuBtn'), 1, 0);
+    return out;
+  }
+
+  /* 失败 */
+  if (el('overScreen').classList.contains('show')) {
+    add(el('restartBtn'), 0, 0);
+    add(el('menuBtn'),    1, 0);
+    return out;
+  }
+
+  /* 卡牌：3 张横排 */
   if (state.phase === 'card') {
-    return gpFilter([...document.querySelectorAll('#cardRow .card')]);
+    $('.card').forEach((e, i) => add(e, 0, i));
+    return out;
   }
-  if (document.getElementById('galleryScreen').classList.contains('show')) {
-    const isBgm = document.getElementById('galleryPaneBgm').classList.contains('active');
+
+  /* 图鉴 */
+  if (el('galleryScreen').classList.contains('show')) {
+    const isBgm = el('galleryPaneBgm').classList.contains('active');
+    const tabs = $('.gtab');
+    tabs.forEach((t, i) => add(t, 0, i));
+    add(el('galleryCloseBtn'), 0, 2);
+
     if (isBgm) {
-      return gpFilter([
-        ...document.querySelectorAll('#bgmList .bgm-item'),
-        document.getElementById('bgmPrev'),
-        document.getElementById('bgmPlay'),
-        document.getElementById('bgmNext'),
-        document.getElementById('bgmStop'),
-        ...document.querySelectorAll('.bgm-vol .vol-slider'),
-        ...document.querySelectorAll('.gtab'),
-        document.getElementById('galleryCloseBtn'),
-      ]);
+      const items = $('#bgmList .bgm-item');
+      items.forEach((it, i) => add(it, 1 + i, 0));
+      const transportRow = 1 + items.length + 1;
+      add(el('bgmPrev'), transportRow, 0);
+      add(el('bgmPlay'), transportRow, 1);
+      add(el('bgmNext'), transportRow, 2);
+      add(el('bgmStop'), transportRow, 3);
+      add($('.bgm-vol .vol-slider')[0], transportRow, 4);
+    } else {
+      const items = $('#galleryList .gallery-item');
+      items.forEach((it, i) => add(it, 1 + i, 0));
     }
-    return gpFilter([
-      ...document.querySelectorAll('#galleryList .gallery-item'),
-      ...document.querySelectorAll('.gtab'),
-      document.getElementById('galleryCloseBtn'),
-    ]);
+    return out;
   }
-  if (document.getElementById('garageScreen').classList.contains('show')) {
-    return gpFilter([
-      ...document.querySelectorAll('#garageList .garage-item'),
-      document.getElementById('garageSelectBtn'),
-      document.getElementById('garageCloseBtn'),
-    ]);
+
+  /* 车库：左列列表 + 右上 closeBtn + 右下 selectBtn */
+  if (el('garageScreen').classList.contains('show')) {
+    const items = $('#garageList .garage-item');
+    items.forEach((it, i) => add(it, i, 0));
+    add(el('garageCloseBtn'), 0, 1);
+    add(el('garageSelectBtn'), 1, 1);
+    return out;
   }
-  if (document.getElementById('levelSelectScreen').classList.contains('show')) {
-    const cards = [...document.querySelectorAll('#levelGrid .level-card:not(.locked)')];
-    return gpFilter([
-      ...cards,
-      document.getElementById('prevPageBtn'),
-      document.getElementById('nextPageBtn'),
-      document.getElementById('levelBackBtn'),
-    ]);
-  }
-  if (state.phase === 'menu' && document.getElementById('startScreen').style.display !== 'none') {
-    return gpFilter([
-      document.getElementById('startBtn'),
-      document.getElementById('garageBtn'),
-      document.getElementById('galleryBtn'),
-      document.getElementById('helpBtn'),
-      document.getElementById('settingsBtn'),
-      ...document.querySelectorAll('#langSwitch .lang-btn'),
-    ]);
-  }
-  return [];
+
+  return out;
 }
 
-/* 空间导航：横向惩罚 3.0 */
-function gpSpatialFind(from, dir, list) {
-  if (!from || !from.isConnected) return list[0] || null;
-  const fr = from.getBoundingClientRect();
-  const fcx = fr.left + fr.width / 2;
-  const fcy = fr.top + fr.height / 2;
+/* ★ 坐标锚点找邻居：主方向权重 10，次方向权重 1 */
+function gpFindByDir(fromEl, dir, points) {
+  const fromPt = points.find(p => p.el === fromEl);
+  if (!fromPt) return points[0]?.el || null;
 
   let best = null, bestScore = Infinity;
-  for (const el of list) {
-    if (el === from) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const dx = cx - fcx, dy = cy - fcy;
+  for (const p of points) {
+    if (p === fromPt) continue;
+    const dr = p.r - fromPt.r;
+    const dc = p.c - fromPt.c;
 
     let primary, secondary;
     if (dir === 'up') {
-      if (dy > -6) continue;
-      primary = -dy; secondary = Math.abs(dx);
+      if (dr >= 0) continue;
+      primary = -dr; secondary = Math.abs(dc);
     } else if (dir === 'down') {
-      if (dy < 6) continue;
-      primary = dy; secondary = Math.abs(dx);
+      if (dr <= 0) continue;
+      primary = dr; secondary = Math.abs(dc);
     } else if (dir === 'left') {
-      if (dx > -6) continue;
-      primary = -dx; secondary = Math.abs(dy);
+      if (dc >= 0) continue;
+      primary = -dc; secondary = Math.abs(dr);
     } else {
-      if (dx < 6) continue;
-      primary = dx; secondary = Math.abs(dy);
+      if (dc <= 0) continue;
+      primary = dc; secondary = Math.abs(dr);
     }
-    const score = primary + secondary * 3.0;
-    if (score < bestScore) { bestScore = score; best = el; }
+
+    const score = primary * 10 + secondary;
+    if (score < bestScore) {
+      bestScore = score;
+      best = p.el;
+    }
   }
   return best;
 }
 
-/* ★ 修复 3：找当前界面的可滚动容器（用于列表只有 1 项时的上下滚动） */
 function gpFindScrollable(fromEl) {
   let n = fromEl;
   while (n && n !== document.body) {
@@ -799,32 +839,27 @@ function gpFindScrollable(fromEl) {
   return null;
 }
 
-function gpMoveFocus(dir, list) {
-  if (!gpFocused || list.length === 0) return;
+function gpMoveFocus(dir, points) {
+  if (!points || points.length === 0) return;
+  const list = points.map(p => p.el);
 
-  /* ★ 修复 3：只有一个可聚焦元素时，上下方向改为滚动父容器 */
+  if (!gpFocused || !list.includes(gpFocused)) {
+    gpApplyFocus(list[0]);
+    return;
+  }
+
+  /* 只有一个元素：上下改为滚动父容器 */
   if (list.length === 1) {
     if (dir === 'up' || dir === 'down') {
       const scroller = gpFindScrollable(list[0]);
       if (scroller) {
-        const delta = (dir === 'up' ? -80 : 80);
-        scroller.scrollBy({ top: delta, behavior: 'smooth' });
+        scroller.scrollBy({ top: dir === 'up' ? -80 : 80, behavior: 'smooth' });
       }
     }
     return;
   }
 
-  const idx = list.indexOf(gpFocused);
-  if (idx < 0) { gpApplyFocus(list[0]); return; }
-
-  let next = gpSpatialFind(gpFocused, dir, list);
-  if (!next) {
-    const forward = (dir === 'down' || dir === 'right');
-    const nextIdx = forward
-      ? (idx + 1) % list.length
-      : (idx - 1 + list.length) % list.length;
-    next = list[nextIdx];
-  }
+  const next = gpFindByDir(gpFocused, dir, points);
   if (next && next !== gpFocused) {
     gpApplyFocus(next);
     sfxUI();
@@ -874,7 +909,6 @@ function gpTick() {
 
   const anyInput = pad.navUp || pad.navDown || pad.navLeft || pad.navRight
                 || pad.confirmPressed || pad.cancelPressed
-                || Math.abs(pad.lookX) > 0.1 || Math.abs(pad.lookY) > 0.1
                 || pad.navLeftHeld || pad.navRightHeld;
   if (anyInput && !gpMode) gpMode = true;
 
@@ -884,17 +918,17 @@ function gpTick() {
     return;
   }
 
-  const list = gpCollectCandidates();
-  if (list.length === 0) {
+  const points = gpBuildPoints();
+  if (points.length === 0) {
     gpFocusReset();
     gpLastContext = null;
     return;
   }
 
+  const list = points.map(p => p.el);
   const ctx = gpContextKey();
   const ctxChanged = (ctx !== gpLastContext);
 
-  /* context 切换：记忆恢复 / 首项 */
   if (ctxChanged) {
     gpLastContext = ctx;
     gpLastIndex = 0;
@@ -906,7 +940,7 @@ function gpTick() {
       gpApplyFocus(list[0]);
     }
   } else if (!gpFocused || !list.includes(gpFocused)) {
-    /* ★ 修复 2：同一 context 内焦点元素被销毁（列表重建），用索引恢复 */
+    /* 焦点元素被销毁（列表重建），用索引恢复 */
     if (gpLastIndex >= 0 && gpLastIndex < list.length) {
       gpApplyFocus(list[gpLastIndex]);
     } else {
@@ -914,7 +948,7 @@ function gpTick() {
     }
   }
 
-  /* 记录当前焦点 */
+  /* 记录索引 */
   const curIdx = list.indexOf(gpFocused);
   if (curIdx >= 0) gpLastIndex = curIdx;
   if (ctx && PERSISTENT_CONTEXTS.has(ctx) && gpFocused) {
@@ -923,25 +957,23 @@ function gpTick() {
 
   /* 导航 */
   if (gpIsSlider(gpFocused)) {
-    let changed = false;
+    /* 滑条上左右改值，上下切焦点 */
     if (pad.navLeftHeld) {
       gpFocused.value = Math.max(0, parseInt(gpFocused.value) - 5);
       gpFocused.dispatchEvent(new Event('input', { bubbles: true }));
-      changed = true;
-    }
-    if (pad.navRightHeld) {
+      rumbleLight();
+    } else if (pad.navRightHeld) {
       gpFocused.value = Math.min(100, parseInt(gpFocused.value) + 5);
       gpFocused.dispatchEvent(new Event('input', { bubbles: true }));
-      changed = true;
+      rumbleLight();
     }
-    if (changed) rumbleLight();
-    if (pad.navUp)   gpMoveFocus('up', list);
-    if (pad.navDown) gpMoveFocus('down', list);
+    if (pad.navUp)   gpMoveFocus('up', points);
+    if (pad.navDown) gpMoveFocus('down', points);
   } else {
-    if (pad.navUp)    gpMoveFocus('up', list);
-    if (pad.navDown)  gpMoveFocus('down', list);
-    if (pad.navLeft)  gpMoveFocus('left', list);
-    if (pad.navRight) gpMoveFocus('right', list);
+    if (pad.navUp)    gpMoveFocus('up', points);
+    if (pad.navDown)  gpMoveFocus('down', points);
+    if (pad.navLeft)  gpMoveFocus('left', points);
+    if (pad.navRight) gpMoveFocus('right', points);
   }
 
   /* 确认 */
@@ -962,17 +994,14 @@ function gpTick() {
   if (pad.lbPressed || pad.rbPressed) {
     const tabs = [...document.querySelectorAll('.gtab')];
     if (tabs.length > 0) {
-      const visible = tabs.filter(t => gpVisible(t));
-      if (visible.length > 0) {
-        const curIdx = visible.findIndex(t => t.classList.contains('active'));
-        const nextIdx = pad.rbPressed
-          ? (curIdx + 1) % visible.length
-          : (curIdx - 1 + visible.length) % visible.length;
-        sfxUI();
-        visible[nextIdx].click();
-        gpFocused = null;
-        gpLastIndex = 0;
-      }
+      const cur = tabs.findIndex(t => t.classList.contains('active'));
+      const next = pad.rbPressed
+        ? (cur + 1) % tabs.length
+        : (cur - 1 + tabs.length) % tabs.length;
+      sfxUI();
+      tabs[next].click();
+      gpFocused = null;
+      gpLastIndex = 0;
     }
   }
 }
