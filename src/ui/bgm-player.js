@@ -1,10 +1,10 @@
-﻿/* ============================================================
+/* ============================================================
    ui/bgm-player.js —— BGM 鉴赏
    1. 曲库列表
    2. 选中 / 试听 / 上一首 / 下一首 / 停止
    3. 播放按钮 / 唱片旋转 / 状态同步
    4. 进度条
-   5. 频谱可视化（基于节拍伪随机包络，无需 AnalyserNode）
+   5. 频谱可视化
    ============================================================ */
 
 import { on, emit, state } from '@/core.js';
@@ -20,8 +20,8 @@ import {
    1. 播放器状态
    ============================================================ */
 const bgmPlayer = {
-  current: null,       // 当前试听曲目 key
-  active: false,       // 播放器是否接管了音乐（进入鉴赏页签）
+  current: null,
+  active: false,
   vizRaf: null,
   vizCtx: null,
   vizBars: 48,
@@ -44,7 +44,8 @@ function renderBgmList() {
     const meta = BGM_META[key] || {};
     const track = BGM_TRACKS[key];
     const row = document.createElement('div');
-    row.className = 'bgm-row' +
+    /* ★ 同时加 bgm-item 类，供菜单手柄导航匹配 */
+    row.className = 'bgm-row bgm-item' +
       (key === bgmPlayer.current ? ' sel' : '') +
       (key === bgmPlayer.current && isBgmPlaying() ? ' playing' : '');
     row.dataset.key = key;
@@ -99,7 +100,6 @@ function selectBgmTrack(key, autoPlay) {
     sfxUI();
     bgmPlayer.vizTick = 0;
     Audio.startBGM(key);
-    /* 淡入切换需要约 220ms 才真正接轨，稍后同步播放态 */
     setTimeout(syncBgmPlayState, 120);
     setTimeout(syncBgmPlayState, 340);
   }
@@ -176,7 +176,6 @@ function bgmStep(dir) {
 function bgmStop() {
   initAudio();
   sfxUI();
-  /* immediate 停止：逻辑态与 UI 同步都在本次调用内完成 */
   Audio.stopBGM(true);
   syncBgmPlayState();
   updateBgmNowUI();
@@ -268,7 +267,6 @@ function drawBgmViz() {
   const bw = Math.max(2, (w - gap * (n - 1)) / n);
   const mid = h;
 
-  /* 底网 */
   ctx.strokeStyle = 'rgba(79,221,192,0.10)';
   ctx.lineWidth = 1;
   for (let g = 1; g < 4; g++) {
@@ -327,7 +325,6 @@ function enterBgmTab() {
   bgmPlayer.active = true;
   bgmPlayer.lastActive = Audio.getActiveTrack();
 
-  /* 若当前正在播放的曲目属于曲库，直接沿用为选中项；否则默认第一首 */
   const active = Audio.getActiveTrack();
   if (active && BGM_TRACKS[active]) bgmPlayer.current = active;
   if (!bgmPlayer.current || !BGM_TRACKS[bgmPlayer.current]) {
@@ -337,7 +334,7 @@ function enterBgmTab() {
   renderBgmList();
   updateBgmNowUI();
   syncBgmPlayState();
-  updateBgmProgress();   /* 首帧前先同步进度条 */
+  updateBgmProgress();
   startBgmViz();
 }
 
@@ -374,6 +371,6 @@ export function initBgmPlayer() {
 export function tickBgmPlayer() {
   if (!bgmPlayer.active) return;
   updateBgmProgress();
-  syncBgmPlayState();               /* 幂等：仅在状态变化时更新 DOM */
+  syncBgmPlayState();
   if (!bgmPlayer.vizRaf) startBgmViz();
 }
