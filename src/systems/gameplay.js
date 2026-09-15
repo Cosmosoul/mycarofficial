@@ -409,13 +409,13 @@ export function pickCard(card) {
     emit('dmg:number', { pos: player.pos, value: player.maxHp * 0.3, isCrit: true, color: '#60E080' });
     sfxHealCard();
   } else if (card.type === 'maxhp') {
-    /* ★ 韧体：最大 HP +5% 并回复等量 HP */
-    const boost = player.maxHp * 0.05;
-    player.maxHp += boost;
-    player.hp = Math.min(player.maxHp, player.hp + boost);
+    /* ★ 韧体：最大 HP +5% 并回复等量 HP（取整，避免小数） */
+    const boost = Math.max(1, Math.round(player.maxHp * 0.05));
+    player.maxHp = Math.round(player.maxHp) + boost;
+    player.hp    = Math.min(player.maxHp, Math.round(player.hp) + boost);
     emit('dmg:number', { pos: player.pos, value: boost, isCrit: true, color: '#FF80D0' });
     sfxHealCard();
-  } else {
+  }else {
     const s = skills[card.key];
     s.active = true;
     s.lv = Math.min(s.lv + 1, s.max);
