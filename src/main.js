@@ -55,22 +55,120 @@ import { initBgmPlayer, tickBgmPlayer } from '@/ui/bgm-player.js';
 import { initStory, onStoryResize } from '@/ui/story.js';
 
 /* ============================================================
-   1. 注入 THREE 向量
+   视觉层：CSS 注入
+   · 用 !important 覆盖 styles.css 里 "#startScreen > *:not(...)"
+     这条会把新插入的 canvas 变成 flex item 的规则
+   · 不修改任何现有选择器/规则，只追加
+   ============================================================ */
+function injectVisualLayerCSS() {
+  if (document.getElementById('fxVisualStyle')) return;
+  const s = document.createElement('style');
+  s.id = 'fxVisualStyle';
+  s.textContent = `
+    /* ── 主菜单 FX canvas ── */
+    #menuFxCanvas{
+      position:absolute !important;
+      inset:0 !important;
+      width:100% !important;
+      height:100% !important;
+      z-index:0 !important;
+      pointer-events:none !important;
+      mix-blend-mode:screen;
+      opacity:0.55;
+      image-rendering:pixelated;
+      display:block !important;
+    }
+    /* 主菜单核心内容保证在 FX 之上（langSwitch 本身 z:6，不用动） */
+    #startScreen > h1,
+    #startScreen > .sub,
+    #startScreen > .btn-grid{
+      z-index:1;
+    }
+    /* 标题轻微 CRT 辉光——只加发光，不改布局 */
+    #startScreen h1{
+      text-shadow:
+        0 0 40px rgba(255,107,53,.5),
+        0 0 12px rgba(79,221,192,.30),
+        0 4px 0 rgba(0,0,0,.65);
+    }
+
+    /* ── 局内滤镜层 ── */
+    #gameFxLayer{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      z-index:9;
+      background:
+        radial-gradient(ellipse at 50% 46%,
+          transparent 34%,
+          rgba(0,0,0,0.20) 68%,
+          rgba(0,0,0,0.52) 100%);
+      mix-blend-mode:multiply;
+    }
+    #gameFxLayer::after{
+      content:'';
+      position:absolute;
+      inset:0;
+      background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+      background-size:160px 160px;
+      opacity:0.05;
+      mix-blend-mode:overlay;
+      pointer-events:none;
+    }
+    /* 3D 渲染器轻度调色（不影响 UI 层） */
+    #gameRenderCanvas{
+      filter:contrast(1.07) saturate(1.12) brightness(0.985);
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+/* 把 FX canvas 插到 menuBgCanvas 之后，避免 flex 顺序错乱 */
+function createMenuFxCanvas() {
+  if (document.getElementById('menuFxCanvas')) return;
+  const startScreen = document.getElementById('startScreen');
+  const bgCanvas = document.getElementById('menuBgCanvas');
+  if (!startScreen || !bgCanvas) return;
+  const c = document.createElement('canvas');
+  c.id = 'menuFxCanvas';
+  startScreen.insertBefore(c, bgCanvas.nextSibling);
+}
+
+/* 把滤镜层插到 gameWrapper 第一个子元素 */
+function createGameFxLayer() {
+  if (document.getElementById('gameFxLayer')) return;
+  const wrapper = document.getElementById('gameWrapper');
+  if (!wrapper) return;
+  const d = document.createElement('div');
+  d.id = 'gameFxLayer';
+  wrapper.insertBefore(d, wrapper.firstChild);
+}
+
+/* ============================================================
+   注入 THREE 向量
    ============================================================ */
 player.pos = new THREE.Vector3(0, 0, 0);
 player.dodgeStartPos = new THREE.Vector3();
 player.dodgeEndPos = new THREE.Vector3();
 
 /* ============================================================
-   2. 装配
+   装配
    ============================================================ */
+injectVisualLayerCSS();
+createMenuFxCanvas();
+createGameFxLayer();
+
 mountRenderer();
+/* 给 3D canvas 加 id，让 CSS filter 生效 */
+if (renderer.domElement) renderer.domElement.id = 'gameRenderCanvas';
+
 attachEnemyMeshes();
 initFxLayer();
 initSpeedLines();
 
 /* ============================================================
-   3. 键盘
+   键盘
    ============================================================ */
 installKeyboard((e) => {
   if (e.code === 'KeyK' && state.phase === 'playing') doDodge();
@@ -82,7 +180,7 @@ installKeyboard((e) => {
 });
 
 /* ============================================================
-   4. resize
+   resize
    ============================================================ */
 onResize((w, h) => {
   camera.aspect = w / h;
@@ -93,6 +191,7 @@ onResize((w, h) => {
     menuRenderer.setSize(w, h, false);
     if (menuUniforms) menuUniforms.uAspect.value = w / h;
   }
+  resizeMenuFx();
   onStoryResize(w, h);
   resizeSpeedLineCanvas();
   checkOrientation();
@@ -124,7 +223,7 @@ function updateFullscreenButtons() {
 }
 
 /* ============================================================
-   5. 主菜单背景 shader
+   主菜单背景 shader
    ============================================================ */
 const menuBgCanvas = document.getElementById('menuBgCanvas');
 let menuRenderer = null, menuScene = null, menuCamera = null, menuUniforms = null;
@@ -214,7 +313,92 @@ function initMenuBg() {
 }
 
 /* ============================================================
-   6. 装配
+   主菜单 FX：noise + 扫描线 + 随机故障
+   ============================================================ */
+const menuFxCanvas = document.getElementById('menuFxCanvas');
+let menuFxCtx = null;
+let menuNoiseTile = null;
+let menuGlitchTimer = 0.4;
+let menuGlitchBurst = 0;
+
+function initMenuFx() {
+  if (!menuFxCanvas || menuFxCtx) return;
+  menuFxCtx = menuFxCanvas.getContext('2d');
+  if (!menuFxCtx) return;
+
+  /* noise tile：一次性生成，之后 drawImage 平铺 */
+  const size = 160;
+  menuNoiseTile = document.createElement('canvas');
+  menuNoiseTile.width = menuNoiseTile.height = size;
+  const nctx = menuNoiseTile.getContext('2d');
+  const img = nctx.createImageData(size, size);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    img.data[i]     = v;
+    img.data[i + 1] = v;
+    img.data[i + 2] = v;
+    img.data[i + 3] = 30;   /* 低透明度 */
+  }
+  nctx.putImageData(img, 0, 0);
+  resizeMenuFx();
+}
+
+function resizeMenuFx() {
+  if (!menuFxCanvas) return;
+  const w = menuFxCanvas.clientWidth || window.innerWidth;
+  const h = menuFxCanvas.clientHeight || window.innerHeight;
+  /* 半分辨率：性能友好、颗粒感更明显 */
+  menuFxCanvas.width  = Math.max(2, Math.floor(w * 0.5));
+  menuFxCanvas.height = Math.max(2, Math.floor(h * 0.5));
+}
+
+function drawMenuFx(dt) {
+  if (!menuFxCtx || !menuNoiseTile) return;
+  const ctx = menuFxCtx;
+  const w = menuFxCanvas.width, h = menuFxCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  /* 1. noise 平铺 */
+  ctx.globalAlpha = 0.55;
+  for (let y = 0; y < h; y += 160) {
+    for (let x = 0; x < w; x += 160) {
+      ctx.drawImage(menuNoiseTile, x, y);
+    }
+  }
+
+  /* 2. 扫描线 */
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+
+  /* 3. 随机故障条 */
+  menuGlitchTimer -= dt;
+  if (menuGlitchTimer <= 0 && Math.random() < 0.22) {
+    menuGlitchTimer = 0.5 + Math.random() * 2.0;
+    menuGlitchBurst = 0.12 + Math.random() * 0.10;
+  }
+  if (menuGlitchBurst > 0) {
+    menuGlitchBurst -= dt;
+    const slices = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < slices; i++) {
+      const y  = Math.random() * h;
+      const sh = 1 + Math.random() * 5;
+      const dx = (Math.random() - 0.5) * w * 0.28;
+      const col = [
+        'rgba(0,255,255,0.42)',
+        'rgba(255,0,255,0.36)',
+        'rgba(255,90,90,0.30)',
+      ][Math.floor(Math.random() * 3)];
+      ctx.fillStyle = col;
+      ctx.fillRect(dx, y, w, sh);
+    }
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+/* ============================================================
+   装配
    ============================================================ */
 setMapType('park');
 buildTerrain('park');
@@ -233,7 +417,7 @@ initStory();
 initGamepad();
 
 /* ============================================================
-   7. 主循环
+   主循环
    ============================================================ */
 const clock = new THREE.Clock();
 
@@ -252,7 +436,7 @@ function animate() {
   updateEngineSound(rawDt);
 
   if (state.phase === 'menu') {
-    if (!menuBgStarted) initMenuBg();
+    if (!menuBgStarted) { initMenuBg(); initMenuFx(); }
     if (menuRenderer) {
       menuUniforms.uTime.value = performance.now() * 0.001;
       const cw = menuBgCanvas.clientWidth || 1;
@@ -261,6 +445,7 @@ function animate() {
       menuRenderer.setSize(cw, ch, false);
       menuRenderer.render(menuScene, menuCamera);
     }
+    drawMenuFx(rawDt);
     tickViewers(rawDt);
     tickBgmPlayer();
     return;
