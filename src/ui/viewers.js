@@ -404,7 +404,19 @@ function renderGarageList() {
         ? (id === selectedCarId ? `<span class="gi-badge">${T('inUse')}</span>` : '')
         : `<span class="gi-lock" title="${ruleText}">🔒</span>`);
 
-    bindTap(el, () => { sfxUI(); garagePreview(id); renderGarageList(); });
+    bindTap(el, () => {
+      sfxUI();
+      garagePreview(id);
+      renderGarageList();
+      /* ★ 已解锁的车：点击即直接选用（手柄 A 走这条路径） */
+      if (unlocked && id !== selectedCarId) {
+        setSelectedCarId(id);
+        rebuildCarMesh();
+        sfxCardPick();
+        renderGarageList();
+        garagePreview(id);
+      }
+    });
     list.appendChild(el);
   }
 }
