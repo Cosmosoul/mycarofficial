@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    systems/gameplay.js —— 玩法系统
    ============================================================ */
 
@@ -180,7 +180,7 @@ function getFreezeSlow() {
 
 export function dealDamageToEnemy(e, dmg, kind, isCrit = false) {
   if (!e.active) return;
-  if (e.invulnerable) return;                    /* ★ 飞碟空中免疫 */
+  if (e.invulnerable) return;
 
   const now = performance.now();
   let final = dmg;
@@ -266,10 +266,10 @@ export function killEnemy(e) {
     spawnBurstParticles(e.pos, e.color, Tuning.Particles.count, Tuning.Particles.speed);
   }
 
-  /* ---- 殉爆僵尸：无差别死亡爆炸 ---- */
+  /* ---- 殉爆僵尸：无差别死亡爆炸（数值下调后） ---- */
   if (e.type === 'suicide') {
-    const BLAST_R = 8;
-    const BLAST_DMG = 60;
+    const BLAST_R = 7;
+    const BLAST_DMG = 40;
     spawnRing(e.pos.clone().setY(0.3), 0xFF5010, BLAST_R, 0.55);
     spawnRing(e.pos.clone().setY(0.3), 0xFFD040, BLAST_R * 0.6, 0.35);
     spawnBurstParticles(e.pos, 0xFF5010, 24, 16);
@@ -341,7 +341,7 @@ export function triggerThunder() {
   let hitCount = 0;
   for (const e of enemies) {
     if (!e.active) continue;
-    if (e.invulnerable) continue;              /* ★ 飞碟空中免疫 */
+    if (e.invulnerable) continue;
     const scaled = dmg * (ENEMY_LEVEL_MULT[e.type] || 1);
     e.hp -= scaled;
     hitCount++;
@@ -472,7 +472,6 @@ export function startWave() {
   if (state.wave % Tuning.Wave.bossEvery === 0 && !state.bossActive) {
     const angle = Math.random() * Math.PI * 2;
     const r = 40;
-    /* ★ 三种 BOSS 随机抽一个 */
     const BOSS_POOL = ['boss', 'boss_slam', 'boss_ufo'];
     const bossType = BOSS_POOL[Math.floor(Math.random() * BOSS_POOL.length)];
     spawnEnemy(bossType, player.pos.x + Math.cos(angle) * r, player.pos.z + Math.sin(angle) * r);
@@ -549,27 +548,27 @@ export function updateSpawning(dt) {
       const x = player.pos.x + Math.cos(angle) * r;
       const z = player.pos.z + Math.sin(angle) * r;
 
-      /* ★ 新增 4 种僵尸概率 */
+      /* ★ 新怪概率重排：原 4 种前段保留，新 4 种后段推后 */
       const roll = Math.random();
       let type = 'mob';
       if (state.eliteMix) {
-        if (roll < 0.12) type = 'ranged';
-        else if (roll < 0.30) type = 'shield';
-        else if (roll < 0.42) type = 'elite';
-        else if (roll < 0.50) type = 'runner';
-        else if (roll < 0.58) type = 'dasher';
+        if (roll < 0.15) type = 'ranged';
+        else if (roll < 0.35) type = 'shield';
+        else if (roll < 0.47) type = 'elite';
+        else if (roll < 0.53) type = 'runner';
+        else if (roll < 0.59) type = 'dasher';
         else if (roll < 0.65) type = 'jumper';
-        else if (roll < 0.72) type = 'suicide';
+        else if (roll < 0.71) type = 'suicide';
         else type = 'mob';
       } else {
         if (state.wave >= 3 && roll < 0.08) type = 'bomber';
         else if (state.wave >= 4 && roll < 0.16) type = 'ranged';
         else if (state.wave >= 5 && roll < 0.24) type = 'shield';
         else if (state.wave >= 6 && roll < 0.28) type = 'elite';
-        else if (state.wave >= 3 && roll < 0.38) type = 'runner';
-        else if (state.wave >= 4 && roll < 0.46) type = 'dasher';
-        else if (state.wave >= 5 && roll < 0.54) type = 'jumper';
-        else if (state.wave >= 4 && roll < 0.62) type = 'suicide';
+        else if (state.wave >= 5 && roll < 0.34) type = 'runner';
+        else if (state.wave >= 6 && roll < 0.40) type = 'dasher';
+        else if (state.wave >= 7 && roll < 0.46) type = 'jumper';
+        else if (state.wave >= 6 && roll < 0.52) type = 'suicide';
       }
       spawnEnemy(type, x, z);
     }
@@ -608,7 +607,7 @@ export function updateEnemies(dt) {
       continue;
     }
 
-    /* ---- 空中物理（原有代码 + 落地分支扩展） ---- */
+    /* ---- 空中物理 ---- */
     if (e.airTime > 0) {
       e.vel.y -= Tuning.Physics.gravity * dt;
       e.vel.x *= (1 - Tuning.Physics.airDrag * dt);
@@ -628,9 +627,9 @@ export function updateEnemies(dt) {
         e.roll = 0;
         e.rollSpeed = 0;
 
-        /* 跳击僵尸落地冲击波 */
+        /* 跳击僵尸落地冲击波（数值下调后） */
         if (e.type === 'jumper' && e.jumpPhase === 2) {
-          const JR = 7, JD = 35;
+          const JR = 7, JD = 24;
           enemyHash.query(e.pos.x, e.pos.z, JR, sepOut);
           for (const other of sepOut) {
             if (other === e || !other.active || other.isBoss) continue;
@@ -792,10 +791,15 @@ export function updateEnemies(dt) {
       }
     }
 
-    /* ---- 追踪 / 环绕 / 侧翼 目标点 ---- */
+    /* ---- 追踪 / 环绕 / 侧翼 目标点（含 8m 强制追车） ---- */
     let targetX, targetZ;
+    const CLOSE_FORCE_DIST = 8;
     if (e.isBoss) {
       targetX = predX; targetZ = predZ;
+    } else if (distToPlayer < CLOSE_FORCE_DIST && e.role !== 'thrower') {
+      const pt = Math.min(distToPlayer / Math.max(e.speed, 1), 0.5);
+      targetX = player.pos.x + Math.sin(player.yaw) * player.speed * pt * 0.6;
+      targetZ = player.pos.z + Math.cos(player.yaw) * player.speed * pt * 0.6;
     } else if (e.role === 'flank') {
       const sa = player.yaw + e.sideSign * Tuning.AI.flankAngle;
       targetX = player.pos.x + Math.sin(sa) * 8;
@@ -986,7 +990,7 @@ export function updateEnemies(dt) {
 }
 
 /* ============================================================
-   6b. ★ 幽浮母舰 BOSS —— 独立 AI
+   6b. 幽浮母舰 BOSS —— 独立 AI
    ============================================================ */
 const UFO_AIR_HEIGHT = 12;
 const UFO_GROUND_TIME = 4.0;
@@ -1000,7 +1004,6 @@ function updateUfoBoss(e, dt) {
   const distH = Math.hypot(dx, dz) || 1;
   const dirX = dx / distH, dirZ = dz / distH;
 
-  /* —— 水平漂移：保持 18m 距离 + 缓慢环绕 —— */
   const TARGET_DIST = 18;
   let mvX = 0, mvZ = 0;
   if (distH > TARGET_DIST + 2) { mvX = dirX; mvZ = dirZ; }
@@ -1013,14 +1016,12 @@ function updateUfoBoss(e, dt) {
   e.pos.z += mvZ * spd * dt;
   e.angle = Math.atan2(dirX, dirZ);
 
-  /* —— 阶段状态机 —— */
   e.ufoTimer -= dt;
 
   if (e.ufoPhase === 'air') {
     e.pos.y += (UFO_AIR_HEIGHT - e.pos.y) * Math.min(4 * dt, 1);
     e.invulnerable = true;
 
-    /* 投掷红色子弹：每 1.5s 连发 3 发，朝玩家三维方向 */
     e.ufoFireCD -= dt;
     if (e.ufoFireCD <= 0) {
       e.ufoFireCD = 1.5;
@@ -1049,7 +1050,6 @@ function updateUfoBoss(e, dt) {
       e.pos.y = 0;
       spawnRing(e.pos.clone().setY(0.3), 0x60E0FF, 9, 0.55);
       state.screenShake = Math.max(state.screenShake, 14);
-      /* 一圈 8 只暴民僵尸 */
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2 + Math.random() * 0.2;
         const r = 6 + Math.random() * 2;
@@ -1262,7 +1262,7 @@ export function checkRam(dt) {
   enemyHash.query(hitX, hitZ, C.hitRadius, queryOut);
   for (const e of queryOut) {
     if (!e.active || e.ramCD > 0 || e.isBoss) continue;
-    if (e.invulnerable) continue;                 /* ★ 空中飞碟不可撞 */
+    if (e.invulnerable) continue;
     const dx = e.pos.x - hitX, dz = e.pos.z - hitZ;
     if (dx * dx + dz * dz < C.hitRadius * C.hitRadius) {
       e.ramCD = Tuning.Ram.cooldownPerEnemy;
@@ -1301,7 +1301,6 @@ export function checkRam(dt) {
     }
   }
 
-  /* ★ Boss 撞击（仅在非无敌状态） */
   if (state.boss && state.boss.active && state.boss.ramCD <= 0 && !state.boss.invulnerable) {
     const dx = state.boss.pos.x - hitX, dz = state.boss.pos.z - hitZ;
     const bossR = state.boss.radius + 1.5;
@@ -1397,7 +1396,7 @@ function findTargetInFront(maxAngleDeg, maxDist) {
   const cosLimit = Math.cos(maxAngleDeg * Math.PI / 180);
   for (const e of enemies) {
     if (!e.active) continue;
-    if (e.invulnerable) continue;              /* ★ 空中飞碟不锁定 */
+    if (e.invulnerable) continue;
     const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
     const d = Math.hypot(dx, dz);
     if (d > maxDist) continue;
@@ -1438,7 +1437,7 @@ function handleBulletTick(b) {
   enemyHash.query(b.pos.x, b.pos.z, 3, queryOut);
   for (const e of queryOut) {
     if (!e.active) continue;
-    if (e.invulnerable) continue;              /* ★ 空中飞碟免疫子弹 */
+    if (e.invulnerable) continue;
     const dx = e.pos.x - b.pos.x, dz = e.pos.z - b.pos.z;
     if (dx * dx + dz * dz < (e.scaleRadius + 0.7) * (e.scaleRadius + 0.7)) {
       dealDamageToEnemy(e, b.dmg, b.kind);
