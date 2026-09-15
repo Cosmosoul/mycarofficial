@@ -179,14 +179,18 @@ export function pollGamepad() {
   let navR = edge(BTN.DRight);
 
   const nowMs = performance.now();
-  const stickX = Math.abs(rawLX) > 0.55 ? rawLX : 0;
-  const stickY = Math.abs(rawLY) > 0.55 ? rawLY : 0;
-  if ((stickX || stickY) && nowMs - _navTimer > NAV_REPEAT_MS) {
-    _navTimer = nowMs;
-    if (Math.abs(stickX) > Math.abs(stickY)) {
-      if (stickX > 0) navR = true; else navL = true;
-    } else {
-      if (stickY > 0) navD = true; else navU = true;
+  /* ★ 只有 D-pad 都没触发时，摇杆才补位；摇杆有节流，D-pad 每次按下都算 */
+  if (!navU && !navD && !navL && !navR) {
+    const stickX = Math.abs(rawLX) > 0.55 ? rawLX : 0;
+    const stickY = Math.abs(rawLY) > 0.55 ? rawLY : 0;
+    const nowMs = performance.now();
+    if ((stickX || stickY) && nowMs - _navTimer > NAV_REPEAT_MS) {
+      _navTimer = nowMs;
+      if (Math.abs(stickX) > Math.abs(stickY)) {
+        if (stickX > 0) navR = true; else navL = true;
+      } else {
+        if (stickY > 0) navD = true; else navU = true;
+      }
     }
   }
 
