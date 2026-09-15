@@ -631,7 +631,8 @@ function gpVisible(el) {
   let n = el;
   while (n && n !== document.body) {
     const s = window.getComputedStyle(n);
-    if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+    /* ★ 去掉 opacity 检查：过渡动画期间 opacity 会是中间值，影响聚焦 */
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
     n = n.parentElement;
   }
   return true;
@@ -649,13 +650,7 @@ function gpCollectCandidates() {
   }
   if (document.getElementById('settingsScreen').classList.contains('show')) {
     return gpFilter([
-      ...$('#settingsScreen .vol-slider'),
-      ...$('#settingsScreen [data-engine-toggle]'),
-      ...$('#settingsScreen [data-rumble-toggle]'),
-      ...$('#settingsScreen [data-invert-y-toggle]'),
-      ...$('#settingsScreen .fs-btn'),
-      ...$('#settingsScreen .lang-btn'),
-      document.getElementById('settingsCloseBtn'),
+      ...$('#settingsScreen button, #settingsScreen input[type="range"], #settingsScreen .vol-slider, #settingsScreen .lang-btn, #settingsScreen .fs-btn'),
     ]);
   }
   if (document.getElementById('levelGoalModal').classList.contains('show')) {
@@ -669,13 +664,7 @@ function gpCollectCandidates() {
   }
   if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) {
     return gpFilter([
-      ...$('#pauseMenu button[data-act]'),
-      ...$('#pauseMenu .vol-slider'),
-      ...$('#pauseMenu [data-engine-toggle]'),
-      ...$('#pauseMenu [data-rumble-toggle]'),
-      ...$('#pauseMenu [data-invert-y-toggle]'),
-      ...$('#pauseMenu .fs-btn'),
-      ...$('#pauseMenu .lang-btn'),
+      ...$('#pauseMenu button, #pauseMenu input[type="range"], #pauseMenu .vol-slider, #pauseMenu .lang-btn, #pauseMenu .fs-btn'),
     ]);
   }
   if (state.phase === 'card') {
