@@ -21,6 +21,7 @@ import { pickRandomMap } from '@/content/maps.js';
 import { keys } from '@/platform.js';
 import {
   initAudio, startEngineSound,
+  startBGM, pickRandomGameTrack,
   setTouchPedals as audioSetTouchPedals,
   sfxBasic, sfxAoe, sfxShock, sfxHeal, sfxCrit, sfxExecute, sfxLuck,
   sfxThunder, sfxChain, sfxFreeze, sfxEnergy, sfxHealCard, sfxRam,
@@ -266,7 +267,7 @@ export function killEnemy(e) {
     spawnBurstParticles(e.pos, e.color, Tuning.Particles.count, Tuning.Particles.speed);
   }
 
-  /* ---- 殉爆僵尸：无差别死亡爆炸（数值下调后） ---- */
+  /* ---- 殉爆僵尸：无差别死亡爆炸 ---- */
   if (e.type === 'suicide') {
     const BLAST_R = 7;
     const BLAST_DMG = 40;
@@ -548,7 +549,6 @@ export function updateSpawning(dt) {
       const x = player.pos.x + Math.cos(angle) * r;
       const z = player.pos.z + Math.sin(angle) * r;
 
-      /* ★ 新怪概率重排：原 4 种前段保留，新 4 种后段推后 */
       const roll = Math.random();
       let type = 'mob';
       if (state.eliteMix) {
@@ -627,7 +627,7 @@ export function updateEnemies(dt) {
         e.roll = 0;
         e.rollSpeed = 0;
 
-        /* 跳击僵尸落地冲击波（数值下调后） */
+        /* 跳击僵尸落地冲击波 */
         if (e.type === 'jumper' && e.jumpPhase === 2) {
           const JR = 7, JD = 24;
           enemyHash.query(e.pos.x, e.pos.z, JR, sepOut);
@@ -1540,6 +1540,10 @@ export function initGameplay() {
 export function resetGame(mapType) {
   initAudio();
   startEngineSound();
+
+  /* ★ 每局开始，从游戏曲池（GAME_TRACK_ROTATION）随机挑一首。
+       该池已在 content/music.js 里排除了 menu / levelSelect / storyTheme。 */
+  startBGM(pickRandomGameTrack());
 
   state.phase = 'playing';
   state.elapsed = 0;
