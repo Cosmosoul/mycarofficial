@@ -1,8 +1,7 @@
-﻿/* ============================================================
-   ui/viewers.js —— 3D 预览
-   1. 鉴赏 viewer（图鉴：座驾 / 僵尸 / BOSS）
-   2. 车库 viewer（换车）
-   3. 鉴赏页签切换
+/* ============================================================
+   ui/viewers.js —— 3D 预览（图鉴 + 车库）
+   · 鼠标拖拽 / 触摸拖拽 / 手柄右摇杆旋转
+   · y 轴翻转设置适配
    ============================================================ */
 
 import * as THREE from 'three';
@@ -25,6 +24,9 @@ import { rebuildCarMesh } from '@/entities.js';
 import { sfxUI, sfxCardPick, initAudio } from '@/audio.js';
 import { showUnlockToast } from '@/ui/menus.js';
 import { getActiveTrack, isMusicRunning } from '@/audio.js';
+import { pad, invertY } from '@/gamepad.js';
+
+const LOOK_SPEED = 2.2;
 
 /* ============================================================
    1. 图鉴 viewer
@@ -68,7 +70,6 @@ function initViewer() {
 
   viewer.initialized = true;
 
-  /* ---- 拖拽交互 ---- */
   canvas.addEventListener('mousedown', (e) => {
     viewer.dragging = true;
     viewer.lastX = e.clientX; viewer.lastY = e.clientY;
@@ -127,11 +128,8 @@ function setViewerModel(type) {
 
   const def = ENEMY_DEFS[type];
   if (def && def.isBoss) {
-    if (type === 'boss_ufo') {
-      viewer.model = buildViewerUfo();
-    } else {
-      viewer.model = buildViewerBoss();
-    }
+    if (type === 'boss_ufo') viewer.model = buildViewerUfo();
+    else viewer.model = buildViewerBoss();
     viewer.yaw = 0.5;
     viewer.pitch = 0.15;
   } else if (def) {
@@ -429,7 +427,9 @@ function renderGarage(dt) {
   if (!garageViewer.initialized || !garageViewer.model) return;
   garageViewer.time += dt;
   if (garageViewer.bgMat) garageViewer.bgMat.uniforms.uTime.value = garageViewer.time;
-  if (!garageViewer.dragging) garageViewer.yaw += dt * 0.35;
+
+  const padLooking = pad.connected && (Math.abs(pad.lookX) > 0.05 || Math.abs(pad.lookY) > 0.05);
+  if (!garageViewer.dragging && !padLooking) garageViewer.yaw += dt * 0.35;
 
   const veh = VEHICLES[garageCurrentId];
   const dist = veh.preview ? veh.preview.dist : 11;
@@ -457,7 +457,7 @@ function renderGarage(dt) {
 }
 
 /* ============================================================
-   3. 鉴赏页签切换
+   3. 页签
    ============================================================ */
 let currentTab = 'model';
 
@@ -483,16 +483,14 @@ export function switchGalleryTab(tab) {
 }
 
 /* ============================================================
-   4. 初始化 & 事件订阅
+   4. 初始化
    ============================================================ */
 export function initViewers() {
-  /* ---- 图鉴打开 ---- */
   on('ui:galleryOpen', () => {
     document.getElementById('galleryScreen').classList.add('show');
     switchGalleryTab('model');
   });
 
-  /* ---- 图鉴关闭 ---- */
   bindTap(document.getElementById('galleryCloseBtn'), () => {
     document.getElementById('galleryScreen').classList.remove('show');
     emit('bgm:leaveTab');
@@ -502,7 +500,6 @@ export function initViewers() {
     }
   });
 
-  /* ---- 剧情按钮 ---- */
   bindTap(document.getElementById('replayStoryBtn'), () => {
     initAudio();
     sfxUI();
@@ -512,7 +509,6 @@ export function initViewers() {
     emit('ui:replayStory');
   });
 
-  /* ---- 图鉴列表 ---- */
   document.querySelectorAll('.gallery-item').forEach(item => {
     bindTap(item, () => {
       document.querySelectorAll('.gallery-item').forEach(i => i.classList.remove('active'));
@@ -521,7 +517,6 @@ export function initViewers() {
     });
   });
 
-  /* ---- 页签 ---- */
   document.querySelectorAll('.gtab').forEach(tab => {
     bindTap(tab, () => {
       initAudio();
@@ -530,7 +525,6 @@ export function initViewers() {
     });
   });
 
-  /* ---- 车库打开 ---- */
   on('ui:garageOpen', () => { openGarage(); });
 
   bindTap(document.getElementById('garageCloseBtn'), () => { sfxUI(); closeGarage(); });
@@ -549,7 +543,6 @@ export function initViewers() {
     garagePreview(selectedCarId);
   });
 
-  /* ---- 语言切换后刷新动态文案 ---- */
   document.addEventListener('lang:change', () => {
     if (garageOpen) {
       renderGarageList();
@@ -562,9 +555,27 @@ export function initViewers() {
 }
 
 /* ============================================================
-   5. 每帧更新（由 main.js 调用）
+   5. 每帧更新
    ============================================================ */
 export function tickViewers(dt) {
+  /* 手柄右摇杆：驱动 3D 预览旋转 */
+  if (pad.connected) {
+    const lookActive = Math.abs(pad.lookX) > 0.02 || Math.abs(pad.lookY) > 0.02;
+    const ySign = invertY ? -1 : 1;
+
+    if (lookActive && document.getElementById('galleryScreen').classList.contains('show')
+        && document.getElementById('galleryPaneModel').classList.contains('active')) {
+      viewer.yaw -= pad.lookX * LOOK_SPEED * dt;
+      viewer.pitch += pad.lookY * LOOK_SPEED * dt * ySign;
+      viewer.pitch = Math.max(-0.3, Math.min(1.2, viewer.pitch));
+    }
+    if (lookActive && garageOpen) {
+      garageViewer.yaw -= pad.lookX * LOOK_SPEED * dt;
+      garageViewer.pitch += pad.lookY * LOOK_SPEED * dt * ySign;
+      garageViewer.pitch = Math.max(-0.1, Math.min(1.1, garageViewer.pitch));
+    }
+  }
+
   if (document.getElementById('galleryScreen').classList.contains('show')) {
     renderViewer(dt);
   }
