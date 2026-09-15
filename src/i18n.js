@@ -96,6 +96,8 @@ export const I18N = {
     settingsTitle: '设 置', close: '关 闭',
     gamepadConnected: '🎮 手柄已连接',
     gamepadDisconnected: '🎮 手柄已断开',
+    rumbleLabel: '手柄震动',
+    invertYLabel: '右摇杆 Y 轴翻转',
 
     /* 图鉴 */
     galleryTitle: '鉴 赏',
@@ -315,6 +317,8 @@ export const I18N = {
     settingsTitle: 'SETTINGS', close: 'CLOSE',
     gamepadConnected: '🎮 Controller connected',
     gamepadDisconnected: '🎮 Controller disconnected',
+    rumbleLabel: 'Controller rumble',
+    invertYLabel: 'Invert right-stick Y',
 
     /* Gallery */
     galleryTitle: 'GALLERY',
