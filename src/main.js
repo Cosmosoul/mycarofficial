@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    main.js —— 唯一入口
    · 初始化 three.js / 场景 / 地形 / 系统 / UI
    · 主循环：boot / menu / story / playing 四个阶段
@@ -56,9 +56,12 @@ import {
   doDodge, doJump, triggerGameOver,
 } from '@/systems/gameplay.js';
 
+/* ---------- gamepad ---------- */
+import { initGamepad, pollGamepad } from '@/gamepad.js';
+
 /* ---------- ui ---------- */
 import { initHud, tickHud } from '@/ui/hud.js';
-import { initMenus } from '@/ui/menus.js';
+import { initMenus, tickMenus } from '@/ui/menus.js';
 import { initViewers, tickViewers } from '@/ui/viewers.js';
 import { initBgmPlayer, tickBgmPlayer } from '@/ui/bgm-player.js';
 import { initStory, onStoryResize } from '@/ui/story.js';
@@ -86,7 +89,6 @@ installKeyboard((e) => {
   if (e.code === 'KeyK' && state.phase === 'playing') doDodge();
   if (e.code === 'Space' && state.phase === 'playing') { e.preventDefault(); doJump(); }
   if (state.phase === 'story' && (e.code === 'Space' || e.code === 'Enter')) {
-    // story 的 skip 在 story.js 内部监听 —— 这里同步派发
     document.getElementById('storyScreen').click();
   }
   /* Esc 与卡牌快捷键由 menus.js 处理 */
@@ -125,7 +127,7 @@ function checkOrientation() {
   document.getElementById('rotateHint').style.display = isPortrait ? 'flex' : 'none';
 }
 
-/* 全屏按钮文案同步 —— 委托给 menus.js 的内部函数，此处只做状态感知 */
+/* 全屏按钮文案同步 */
 function updateFullscreenButtons() {
   const fs = !!(document.fullscreenElement || document.webkitFullscreenElement
             || document.mozFullScreenElement || document.msFullscreenElement);
@@ -234,9 +236,6 @@ setMapType('park');
 buildTerrain('park');
 resetEnemies();
 rebuildCarMesh();
-// resetGame 内部会再次 buildTerrain，但保证一致
-/* 注意：第一次 resetGame 之前 state.phase 还是 'boot'，所以不会真正开跑；
-   后面 phase 变为 'menu' 时 loop 会跳过游戏更新。 */
 
 applyLanguage();
 
@@ -247,6 +246,9 @@ initMenus();
 initViewers();
 initBgmPlayer();
 initStory();
+
+/* ★ 手柄初始化（连接检测 + 主动扫描） */
+initGamepad();
 
 /* ============================================================
    7. 主循环
@@ -263,7 +265,11 @@ function animate() {
     return;
   }
 
-  /* ---------- 引擎声浪（所有阶段都跑，非 game 时自动静音） ---------- */
+  /* ★ 手柄：每帧轮询 + 驱动菜单导航（所有阶段都跑） */
+  pollGamepad();
+  tickMenus();
+
+  /* ---------- 引擎声浪 ---------- */
   updateEngineSound(rawDt);
 
   /* ---------- menu：背景 shader + viewer / BGM / 车库 ---------- */
@@ -287,7 +293,7 @@ function animate() {
     return;
   }
 
-  /* ---------- viewer / garage / bgm 面板（游戏内仍可打开） ---------- */
+  /* ---------- viewer / garage / bgm 面板 ---------- */
   tickViewers(rawDt);
   tickBgmPlayer();
 
@@ -314,7 +320,7 @@ function animate() {
   }
   const dt = rawDt * ts;
 
-  /* ---------- 游戏 / 卡牌阶段：更新所有玩法系统 ---------- */
+  /* ---------- 游戏 / 卡牌阶段 ---------- */
   if (state.phase === 'playing' || state.phase === 'card') {
     state.elapsed += rawDt;
 
@@ -331,7 +337,6 @@ function animate() {
   }
 
   /* ---------- 尾焰 ---------- */
-  /* 把车体 Y 偏移传给 fx.js */
   {
     const carMesh = getCarMesh();
     if (carMesh) setCarMeshY(carMesh.position.y);
