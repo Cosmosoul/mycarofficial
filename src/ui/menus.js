@@ -1,6 +1,5 @@
 /* ============================================================
    ui/menus.js —— 菜单 / 弹窗 / 结算 / 选关 / 设置 / 帮助 / 卡牌 UI
-   触摸控制 + 手柄菜单导航（2D 空间导航 + 滑条调整 + 焦点保留）
    ============================================================ */
 
 import {
@@ -244,7 +243,7 @@ function togglePause() {
     updateFullscreenButtons();
     const g = getMusicGain();
     if (g) g.gain.value = state.musicOn ? state.musicVolume * 0.22 * 0.4 : 0;
-    panicRumble();          /* ★ 暂停立即停震 */
+    panicRumble();
   } else if (state.phase === 'paused') {
     state.phase = 'playing';
     document.getElementById('pauseMenu').classList.remove('show');
@@ -537,7 +536,7 @@ function showGameOver(payload) {
 }
 
 /* ============================================================
-   8. 卡牌 UI
+   8. 卡牌 UI —— 支持 heal / maxhp / 普通技能三类
    ============================================================ */
 function initCardUI() {
   const cardsEl = document.getElementById('cards');
@@ -550,8 +549,15 @@ function initCardUI() {
       el.className = 'card';
 
       let effectHTML = '';
+      let lvLineHTML = '';
+
       if (p.type === 'heal') {
         effectHTML = `<div class="card-effect"><span class="next">${T('cardHealEffect')}</span></div>`;
+        lvLineHTML = `<div class="card-lv">${T('cardImmediate')}</div>`;
+      } else if (p.type === 'maxhp') {
+        /* ★ 韧体卡：不显示 Lv 信息 */
+        effectHTML = `<div class="card-effect"><span class="next">${T('cardMaxHpEffect')}</span></div>`;
+        lvLineHTML = `<div class="card-lv">${T('cardInstantPermanent')}</div>`;
       } else {
         const nd = getSkillValueDesc(p.key, p.nextLv);
         if (p.currentLv === 0) {
@@ -563,6 +569,7 @@ function initCardUI() {
             `<div class="card-effect"><span class="arrow">▼</span></div>` +
             `<div class="card-effect"><span class="next">Lv.${p.nextLv}: ${nd}</span></div>`;
         }
+        lvLineHTML = `<div class="card-lv">Lv.${p.currentLv} → ${p.nextLv}</div>`;
       }
 
       el.innerHTML =
@@ -570,7 +577,7 @@ function initCardUI() {
         `<div class="card-sigil"><span class="card-icon">${p.icon}</span></div>` +
         `<div class="card-name">${T('card_' + p.key + '_name')}</div>` +
         `<div class="card-divider"></div>` +
-        `<div class="card-lv">${p.type === 'heal' ? T('cardImmediate') : `Lv.${p.currentLv} → ${p.nextLv}`}</div>` +
+        lvLineHTML +
         effectHTML +
         `<div class="card-desc">${T('card_' + p.key + '_desc')}</div>`;
 
@@ -604,7 +611,7 @@ function onGlobalKeydown(e) {
 }
 
 /* ============================================================
-   10. ★ 手柄菜单导航系统
+   10. 手柄菜单导航系统
    ============================================================ */
 
 let gpFocused = null;
@@ -624,17 +631,15 @@ function gpApplyFocus(el) {
   }
 }
 
+/* ★ 关键修复：用 offsetParent 判断可见性（不受 opacity/transform 过渡影响） */
 function gpVisible(el) {
   if (!el || !el.isConnected) return false;
+  if (el.offsetParent === null) return false;
   const r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) return false;
-  let n = el;
-  while (n && n !== document.body) {
-    const s = window.getComputedStyle(n);
-    /* ★ 去掉 opacity 检查：过渡动画期间 opacity 会是中间值，影响聚焦 */
-    if (s.display === 'none' || s.visibility === 'hidden') return false;
-    n = n.parentElement;
-  }
+  /* 视口外视为不可见 */
+  if (r.bottom < 0 || r.top > window.innerHeight) return false;
+  if (r.right < 0 || r.left > window.innerWidth) return false;
   return true;
 }
 
@@ -650,7 +655,8 @@ function gpCollectCandidates() {
   }
   if (document.getElementById('settingsScreen').classList.contains('show')) {
     return gpFilter([
-      ...$('#settingsScreen button, #settingsScreen input[type="range"], #settingsScreen .vol-slider, #settingsScreen .lang-btn, #settingsScreen .fs-btn'),
+      ...$('#settingsScreen button, #settingsScreen input[type="range"]'),
+      document.getElementById('settingsCloseBtn'),
     ]);
   }
   if (document.getElementById('levelGoalModal').classList.contains('show')) {
@@ -664,7 +670,7 @@ function gpCollectCandidates() {
   }
   if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) {
     return gpFilter([
-      ...$('#pauseMenu button, #pauseMenu input[type="range"], #pauseMenu .vol-slider, #pauseMenu .lang-btn, #pauseMenu .fs-btn'),
+      ...$('#pauseMenu button, #pauseMenu input[type="range"]'),
     ]);
   }
   if (state.phase === 'card') {
@@ -719,7 +725,7 @@ function gpCollectCandidates() {
   return [];
 }
 
-/* 2D 空间导航 */
+/* ★ 2D 空间导航：横向惩罚从 2.5 降到 1.0（更宽松，允许斜向跳转） */
 function gpSpatialFind(from, dir, list) {
   if (!from || !from.isConnected) return list[0] || null;
   const fr = from.getBoundingClientRect();
@@ -749,7 +755,7 @@ function gpSpatialFind(from, dir, list) {
       if (dx < 6) continue;
       primary = dx; secondary = Math.abs(dy);
     }
-    const score = primary + secondary * 2.5;
+    const score = primary + secondary * 1.0;
     if (score < bestScore) { bestScore = score; best = el; }
   }
   return best;
@@ -814,13 +820,10 @@ function gpTick() {
     return;
   }
 
-  /* 焦点失效则重置为首项 */
   if (!gpFocused || !list.includes(gpFocused)) {
-    /* 尝试保留索引位置，否则给第一项 */
     gpApplyFocus(list[0]);
   }
 
-  /* 滑条 */
   if (gpIsSlider(gpFocused)) {
     let changed = false;
     if (pad.navLeftHeld) {
@@ -848,7 +851,6 @@ function gpTick() {
     if (pad.navRight) { const n = gpSpatialFind(gpFocused, 'right', list); if (n) { gpApplyFocus(n); sfxUI(); } }
   }
 
-  /* ★ 确认：保留焦点，不回到列表首项 */
   if (pad.confirmPressed) {
     if (gpFocused && gpFocused.isConnected && typeof gpFocused.click === 'function') {
       const prev = gpFocused;
@@ -856,7 +858,6 @@ function gpTick() {
       sfxUI();
       rumbleLight();
       prev.click();
-      /* 点击后可能引起 UI 变化，重新收集并保留焦点 */
       const newList = gpCollectCandidates();
       if (newList.length > 0) {
         if (newList.includes(prev)) {
@@ -871,13 +872,10 @@ function gpTick() {
     }
   }
 
-  /* 返回：由下一帧自动重定位 */
   if (pad.cancelPressed) {
     gpCancel();
-    /* 不清空 gpFocused，让下一帧自动判断是否还在列表里 */
   }
 
-  /* LB / RB 切图鉴页签 */
   if (pad.lbPressed || pad.rbPressed) {
     const tabs = [...document.querySelectorAll('.gtab')];
     if (tabs.length > 0) {
@@ -899,7 +897,6 @@ export function tickMenus() {
   gpTick();
 }
 
-/* ★ 加强手柄聚焦样式：更醒目、脉动动画 */
 function injectGamepadFocusStyle() {
   if (document.getElementById('gpFocusStyle')) return;
   const style = document.createElement('style');
@@ -967,11 +964,9 @@ export function initMenus() {
     gpFocusReset();
   });
 
-  /* 鼠标/触摸 → 退出手柄模式，隐去手柄高光 */
   document.addEventListener('mousedown', () => { if (gpMode) { gpMode = false; gpFocusReset(); } }, true);
   document.addEventListener('touchstart', () => { if (gpMode) { gpMode = false; gpFocusReset(); } }, true);
 
-  /* 主菜单按钮 */
   bindTap(document.getElementById('startBtn'), () => { initAudio(); sfxUI(); showLevelSelect(); });
   bindTap(document.getElementById('helpBtn'), () => {
     initAudio(); sfxUI();
@@ -995,7 +990,6 @@ export function initMenus() {
   bindTap(document.getElementById('galleryBtn'), () => { initAudio(); sfxUI(); emit('ui:galleryOpen'); });
   bindTap(document.getElementById('garageBtn'),  () => { initAudio(); sfxUI(); emit('ui:garageOpen'); });
 
-  /* 暂停菜单 */
   document.querySelectorAll('.pause-box button[data-act]').forEach(btn => {
     bindTap(btn, () => {
       const act = btn.dataset.act;
