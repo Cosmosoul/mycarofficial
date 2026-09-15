@@ -55,90 +55,6 @@ import { initBgmPlayer, tickBgmPlayer } from '@/ui/bgm-player.js';
 import { initStory, onStoryResize } from '@/ui/story.js';
 
 /* ============================================================
-   0. 注入全局样式（主菜单 FX + 局内滤镜）
-   ============================================================ */
-function injectStyle() {
-  if (document.getElementById('mainStyle')) return;
-  const style = document.createElement('style');
-  style.id = 'mainStyle';
-  style.textContent = `
-    /* ========== 主菜单：故障 + 做旧 ========== */
-    #startScreen { isolation: isolate; }
-    #menuBgCanvas {
-      position: absolute !important;
-      inset: 0;
-      width: 100% !important;
-      height: 100% !important;
-      z-index: 0;
-    }
-    #menuFxCanvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 1;
-      mix-blend-mode: screen;
-      opacity: 0.55;
-      image-rendering: pixelated;
-    }
-    #startScreen > h1,
-    #startScreen > .sub,
-    #startScreen > .btn-grid,
-    #startScreen > #langSwitch {
-      position: relative;
-      z-index: 2;
-    }
-    #startScreen > h1 {
-      text-shadow: 0 0 12px rgba(79, 221, 192, 0.35), 0 0 32px rgba(255, 138, 60, 0.25);
-    }
-    /* 复古做旧：轻微暗角 + 扫描线，叠在最上面（不影响交互） */
-    #startScreen::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
-      background:
-        radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(0,0,0,0.55) 100%),
-        repeating-linear-gradient(
-          0deg,
-          rgba(0,0,0,0.18) 0px,
-          rgba(0,0,0,0.18) 1px,
-          transparent 1px,
-          transparent 3px
-        );
-      mix-blend-mode: multiply;
-      opacity: 0.55;
-    }
-
-    /* ========== 局内：滤镜层 ========== */
-    #gameFxLayer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 200;
-      background: radial-gradient(ellipse at 50% 45%, transparent 30%, rgba(0,0,0,0.22) 70%, rgba(0,0,0,0.55) 100%);
-      mix-blend-mode: multiply;
-    }
-    #gameFxLayer::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.65'/></svg>");
-      background-size: 140px 140px;
-      opacity: 0.055;
-      mix-blend-mode: overlay;
-    }
-    /* 3D 渲染器色调微调 */
-    #gameRenderCanvas {
-      filter: contrast(1.07) saturate(1.12) brightness(0.985);
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-/* ============================================================
    1. 注入 THREE 向量
    ============================================================ */
 player.pos = new THREE.Vector3(0, 0, 0);
@@ -148,10 +64,7 @@ player.dodgeEndPos = new THREE.Vector3();
 /* ============================================================
    2. 装配
    ============================================================ */
-injectStyle();
 mountRenderer();
-/* ★ 给 3D 渲染器 canvas 加 id，便于 CSS 定位 */
-if (renderer.domElement) renderer.domElement.id = 'gameRenderCanvas';
 attachEnemyMeshes();
 initFxLayer();
 initSpeedLines();
@@ -180,7 +93,6 @@ onResize((w, h) => {
     menuRenderer.setSize(w, h, false);
     if (menuUniforms) menuUniforms.uAspect.value = w / h;
   }
-  resizeMenuFx();
   onStoryResize(w, h);
   resizeSpeedLineCanvas();
   checkOrientation();
@@ -302,89 +214,6 @@ function initMenuBg() {
 }
 
 /* ============================================================
-   5b. 主菜单 FX：故障 + noise
-   ============================================================ */
-const menuFxCanvas = document.getElementById('menuFxCanvas');
-let menuFxCtx = null;
-let menuNoiseTile = null;
-let menuGlitchTimer = 0;
-let menuGlitchActive = 0;
-
-function initMenuFx() {
-  if (!menuFxCanvas || menuFxCtx) return;
-  menuFxCtx = menuFxCanvas.getContext('2d');
-
-  /* 生成一次性 noise tile */
-  const size = 128;
-  menuNoiseTile = document.createElement('canvas');
-  menuNoiseTile.width = menuNoiseTile.height = size;
-  const nctx = menuNoiseTile.getContext('2d');
-  const img = nctx.createImageData(size, size);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = (Math.random() * 255) | 0;
-    img.data[i] = v;
-    img.data[i + 1] = v;
-    img.data[i + 2] = v;
-    img.data[i + 3] = 40;
-  }
-  nctx.putImageData(img, 0, 0);
-  resizeMenuFx();
-}
-
-function resizeMenuFx() {
-  if (!menuFxCanvas) return;
-  const w = window.innerWidth, h = window.innerHeight;
-  const scale = 0.5;
-  menuFxCanvas.width = Math.max(2, Math.floor(w * scale));
-  menuFxCanvas.height = Math.max(2, Math.floor(h * scale));
-}
-
-function drawMenuFx(dt) {
-  if (!menuFxCtx || !menuNoiseTile) return;
-  const ctx = menuFxCtx;
-  const w = menuFxCanvas.width, h = menuFxCanvas.height;
-  ctx.clearRect(0, 0, w, h);
-
-  /* noise 铺满 */
-  ctx.globalAlpha = 0.55;
-  for (let y = 0; y < h; y += 128) {
-    for (let x = 0; x < w; x += 128) {
-      ctx.drawImage(menuNoiseTile, x, y);
-    }
-  }
-
-  /* 扫描线 */
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#000';
-  for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
-
-  /* 随机故障 */
-  menuGlitchTimer -= dt;
-  if (menuGlitchTimer <= 0 && Math.random() < 0.10) {
-    menuGlitchTimer = 0.7 + Math.random() * 2.5;
-    menuGlitchActive = 0.12 + Math.random() * 0.10;
-  }
-  if (menuGlitchActive > 0) {
-    menuGlitchActive -= dt;
-    const slices = 2 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < slices; i++) {
-      const y = Math.random() * h;
-      const sh = 1 + Math.random() * 6;
-      const dx = (Math.random() - 0.5) * w * 0.25;
-      const color = [
-        'rgba(0, 255, 255, 0.32)',
-        'rgba(255, 0, 255, 0.28)',
-        'rgba(255, 80, 80, 0.22)',
-      ][Math.floor(Math.random() * 3)];
-      ctx.fillStyle = color;
-      ctx.fillRect(dx, y, w, sh);
-    }
-  }
-
-  ctx.globalAlpha = 1;
-}
-
-/* ============================================================
    6. 装配
    ============================================================ */
 setMapType('park');
@@ -423,7 +252,7 @@ function animate() {
   updateEngineSound(rawDt);
 
   if (state.phase === 'menu') {
-    if (!menuBgStarted) { initMenuBg(); initMenuFx(); }
+    if (!menuBgStarted) initMenuBg();
     if (menuRenderer) {
       menuUniforms.uTime.value = performance.now() * 0.001;
       const cw = menuBgCanvas.clientWidth || 1;
@@ -432,7 +261,6 @@ function animate() {
       menuRenderer.setSize(cw, ch, false);
       menuRenderer.render(menuScene, menuCamera);
     }
-    drawMenuFx(rawDt);
     tickViewers(rawDt);
     tickBgmPlayer();
     return;
