@@ -1,6 +1,6 @@
 /* ============================================================
    ui/menus.js —— 菜单 / 弹窗 / 结算 / 选关 / 设置 / 帮助 / 卡牌 UI
-   触摸控制 + 手柄菜单导航（2D 空间导航 + 滑条调整）
+   触摸控制 + 手柄菜单导航（2D 空间导航 + 滑条调整 + 焦点保留）
    ============================================================ */
 
 import {
@@ -34,7 +34,7 @@ import { clearDmgNumbers } from '@/ui/hud.js';
 import { vehName } from '@/content/vehicles.js';
 import { shouldPlayFirstStory } from '@/ui/story.js';
 import {
-  pad, rumbleLight,
+  pad, rumbleLight, panicRumble,
   invertY, setInvertY,
   rumbleEnabled, setRumbleEnabled,
 } from '@/gamepad.js';
@@ -244,6 +244,7 @@ function togglePause() {
     updateFullscreenButtons();
     const g = getMusicGain();
     if (g) g.gain.value = state.musicOn ? state.musicVolume * 0.22 * 0.4 : 0;
+    panicRumble();          /* ★ 暂停立即停震 */
   } else if (state.phase === 'paused') {
     state.phase = 'playing';
     document.getElementById('pauseMenu').classList.remove('show');
@@ -470,6 +471,7 @@ function showVictory(payload) {
 
   clearTouchState();
   clearFlames();
+  panicRumble();
   document.getElementById('dangerVignette').style.opacity = '0';
 
   const newCars = getNewlyUnlockedCars();
@@ -520,6 +522,7 @@ function showGameOver(payload) {
 
   clearTouchState();
   clearFlames();
+  panicRumble();
   document.getElementById('dangerVignette').style.opacity = '0';
 
   document.getElementById('ovWave').textContent = payload.wave;
@@ -621,12 +624,10 @@ function gpApplyFocus(el) {
   }
 }
 
-/* 判断元素是否可见（在屏幕上，且有非零尺寸） */
 function gpVisible(el) {
   if (!el || !el.isConnected) return false;
   const r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) return false;
-  /* 检查祖先链是否 display:none 或 visibility:hidden */
   let n = el;
   while (n && n !== document.body) {
     const s = window.getComputedStyle(n);
@@ -636,20 +637,16 @@ function gpVisible(el) {
   return true;
 }
 
-/* 过滤候选元素（可见、非 disabled、非 hidden） */
 function gpFilter(list) {
   return list.filter(el => el && gpVisible(el) && !el.disabled);
 }
 
-/* 按当前 UI 层级返回可聚焦元素数组 */
 function gpCollectCandidates() {
   const $ = (sel) => [...document.querySelectorAll(sel)];
 
-  /* 帮助弹窗 */
   if (document.getElementById('helpScreen').classList.contains('show')) {
     return gpFilter([document.getElementById('helpCloseBtn')]);
   }
-  /* 设置弹窗 */
   if (document.getElementById('settingsScreen').classList.contains('show')) {
     return gpFilter([
       ...$('#settingsScreen .vol-slider'),
@@ -661,19 +658,15 @@ function gpCollectCandidates() {
       document.getElementById('settingsCloseBtn'),
     ]);
   }
-  /* 关卡目标 */
   if (document.getElementById('levelGoalModal').classList.contains('show')) {
     return gpFilter([document.getElementById('goalConfirmBtn'), document.getElementById('goalCancelBtn')]);
   }
-  /* 胜利 */
   if (document.getElementById('victoryScreen').classList.contains('show')) {
     return gpFilter([document.getElementById('vicNextBtn'), document.getElementById('vicMenuBtn')]);
   }
-  /* 失败 */
   if (document.getElementById('overScreen').classList.contains('show')) {
     return gpFilter([document.getElementById('restartBtn'), document.getElementById('menuBtn')]);
   }
-  /* 暂停菜单 */
   if (state.phase === 'paused' && document.getElementById('pauseMenu').classList.contains('show')) {
     return gpFilter([
       ...$('#pauseMenu button[data-act]'),
@@ -685,11 +678,9 @@ function gpCollectCandidates() {
       ...$('#pauseMenu .lang-btn'),
     ]);
   }
-  /* 抽卡 */
   if (state.phase === 'card') {
     return gpFilter([...document.querySelectorAll('#cardRow .card')]);
   }
-  /* 图鉴 */
   if (document.getElementById('galleryScreen').classList.contains('show')) {
     const isBgm = document.getElementById('galleryPaneBgm').classList.contains('active');
     if (isBgm) {
@@ -710,7 +701,6 @@ function gpCollectCandidates() {
       document.getElementById('galleryCloseBtn'),
     ]);
   }
-  /* 车库 */
   if (document.getElementById('garageScreen').classList.contains('show')) {
     return gpFilter([
       ...document.querySelectorAll('#garageList .garage-item'),
@@ -718,7 +708,6 @@ function gpCollectCandidates() {
       document.getElementById('garageCloseBtn'),
     ]);
   }
-  /* 选关 */
   if (document.getElementById('levelSelectScreen').classList.contains('show')) {
     const cards = [...document.querySelectorAll('#levelGrid .level-card:not(.locked)')];
     return gpFilter([
@@ -728,7 +717,6 @@ function gpCollectCandidates() {
       document.getElementById('levelBackBtn'),
     ]);
   }
-  /* 主菜单 */
   if (state.phase === 'menu' && document.getElementById('startScreen').style.display !== 'none') {
     return gpFilter([
       document.getElementById('startBtn'),
@@ -742,7 +730,7 @@ function gpCollectCandidates() {
   return [];
 }
 
-/* 2D 空间导航：在 dir 方向上找最近的邻居 */
+/* 2D 空间导航 */
 function gpSpatialFind(from, dir, list) {
   if (!from || !from.isConnected) return list[0] || null;
   const fr = from.getBoundingClientRect();
@@ -772,14 +760,12 @@ function gpSpatialFind(from, dir, list) {
       if (dx < 6) continue;
       primary = dx; secondary = Math.abs(dy);
     }
-    /* 主方向为主，次方向惩罚 2.5 倍 */
     const score = primary + secondary * 2.5;
     if (score < bestScore) { bestScore = score; best = el; }
   }
   return best;
 }
 
-/* 手柄返回（B 键）的语义 */
 function gpCancel() {
   if (state.phase === 'card') return;
   if (document.getElementById('helpScreen').classList.contains('show')) {
@@ -811,26 +797,22 @@ function gpCancel() {
   }
 }
 
-/* 判断当前焦点是否在滑条上 */
 function gpIsSlider(el) {
   return el && el.tagName === 'INPUT' && el.type === 'range';
 }
 
-/* 手柄每帧 tick */
 function gpTick() {
   if (!pad.connected) {
     if (gpMode) { gpMode = false; gpFocusReset(); }
     return;
   }
 
-  /* 首次手柄操作后进入手柄模式 */
   const anyInput = pad.navUp || pad.navDown || pad.navLeft || pad.navRight
                 || pad.confirmPressed || pad.cancelPressed
                 || Math.abs(pad.lookX) > 0.1 || Math.abs(pad.lookY) > 0.1
                 || pad.navLeftHeld || pad.navRightHeld;
   if (anyInput && !gpMode) gpMode = true;
 
-  /* 暂停：任何阶段都能触发 */
   if (pad.pausePressed && (state.phase === 'playing' || state.phase === 'paused')) {
     initAudio();
     togglePause();
@@ -845,10 +827,11 @@ function gpTick() {
 
   /* 焦点失效则重置为首项 */
   if (!gpFocused || !list.includes(gpFocused)) {
+    /* 尝试保留索引位置，否则给第一项 */
     gpApplyFocus(list[0]);
   }
 
-  /* ---- 滑条特殊处理：左右调整，上下导航 ---- */
+  /* 滑条 */
   if (gpIsSlider(gpFocused)) {
     let changed = false;
     if (pad.navLeftHeld) {
@@ -862,7 +845,6 @@ function gpTick() {
       changed = true;
     }
     if (changed) rumbleLight();
-    /* 上下仍然导航 */
     if (pad.navUp) {
       const next = gpSpatialFind(gpFocused, 'up', list);
       if (next) { gpApplyFocus(next); sfxUI(); }
@@ -871,31 +853,42 @@ function gpTick() {
       if (next) { gpApplyFocus(next); sfxUI(); }
     }
   } else {
-    /* ---- 普通元素：四方向导航 ---- */
     if (pad.navUp)    { const n = gpSpatialFind(gpFocused, 'up',    list); if (n) { gpApplyFocus(n); sfxUI(); } }
     if (pad.navDown)  { const n = gpSpatialFind(gpFocused, 'down',  list); if (n) { gpApplyFocus(n); sfxUI(); } }
     if (pad.navLeft)  { const n = gpSpatialFind(gpFocused, 'left',  list); if (n) { gpApplyFocus(n); sfxUI(); } }
     if (pad.navRight) { const n = gpSpatialFind(gpFocused, 'right', list); if (n) { gpApplyFocus(n); sfxUI(); } }
   }
 
-  /* 确认（A） */
+  /* ★ 确认：保留焦点，不回到列表首项 */
   if (pad.confirmPressed) {
     if (gpFocused && gpFocused.isConnected && typeof gpFocused.click === 'function') {
+      const prev = gpFocused;
+      const prevIndex = list.indexOf(prev);
       sfxUI();
       rumbleLight();
-      gpFocused.click();
-      /* 点击后清空焦点，下一帧会重新初始化 */
-      gpFocused = null;
+      prev.click();
+      /* 点击后可能引起 UI 变化，重新收集并保留焦点 */
+      const newList = gpCollectCandidates();
+      if (newList.length > 0) {
+        if (newList.includes(prev)) {
+          gpApplyFocus(prev);
+        } else {
+          const newIdx = Math.min(Math.max(0, prevIndex), newList.length - 1);
+          gpApplyFocus(newList[newIdx]);
+        }
+      } else {
+        gpFocused = null;
+      }
     }
   }
 
-  /* 返回（B） */
+  /* 返回：由下一帧自动重定位 */
   if (pad.cancelPressed) {
     gpCancel();
-    gpFocused = null;
+    /* 不清空 gpFocused，让下一帧自动判断是否还在列表里 */
   }
 
-  /* LB / RB：用于图鉴页签切换 */
+  /* LB / RB 切图鉴页签 */
   if (pad.lbPressed || pad.rbPressed) {
     const tabs = [...document.querySelectorAll('.gtab')];
     if (tabs.length > 0) {
@@ -913,28 +906,45 @@ function gpTick() {
   }
 }
 
-/** main.js 每帧调用 */
 export function tickMenus() {
   gpTick();
 }
 
-/* 手柄高亮样式（不改 styles.css，动态注入） */
+/* ★ 加强手柄聚焦样式：更醒目、脉动动画 */
 function injectGamepadFocusStyle() {
   if (document.getElementById('gpFocusStyle')) return;
   const style = document.createElement('style');
   style.id = 'gpFocusStyle';
   style.textContent = `
+    @keyframes gpFocusPulse {
+      0%, 100% {
+        box-shadow:
+          0 0 0 3px rgba(79, 221, 192, 0.75),
+          0 0 26px 6px rgba(79, 221, 192, 0.9),
+          inset 0 0 18px rgba(79, 221, 192, 0.35);
+      }
+      50% {
+        box-shadow:
+          0 0 0 4px rgba(79, 221, 192, 1),
+          0 0 42px 12px rgba(79, 221, 192, 1),
+          inset 0 0 26px rgba(79, 221, 192, 0.55);
+      }
+    }
     .gp-focus {
       outline: 3px solid #4FDDC0 !important;
-      outline-offset: 4px;
-      box-shadow: 0 0 22px rgba(79, 221, 192, 0.85), inset 0 0 14px rgba(79, 221, 192, 0.22) !important;
-      transform: scale(1.03);
-      transition: outline-offset 0.08s ease, transform 0.08s ease, box-shadow 0.08s ease;
+      outline-offset: 4px !important;
+      transform: scale(1.06) !important;
+      filter: brightness(1.20) saturate(1.15) !important;
       position: relative;
-      z-index: 20;
+      z-index: 50;
+      animation: gpFocusPulse 1.1s ease-in-out infinite;
+      transition: transform 0.08s ease, filter 0.08s ease;
     }
     input[type="range"].gp-focus {
-      outline-offset: 6px;
+      outline-offset: 6px !important;
+      transform: none !important;
+      animation: none;
+      box-shadow: 0 0 0 3px rgba(79, 221, 192, 0.9), 0 0 22px 4px rgba(79, 221, 192, 0.8) !important;
     }
   `;
   document.head.appendChild(style);
@@ -968,7 +978,7 @@ export function initMenus() {
     gpFocusReset();
   });
 
-  /* 鼠标/触摸操作 → 退出"手柄模式"，隐去手柄高光 */
+  /* 鼠标/触摸 → 退出手柄模式，隐去手柄高光 */
   document.addEventListener('mousedown', () => { if (gpMode) { gpMode = false; gpFocusReset(); } }, true);
   document.addEventListener('touchstart', () => { if (gpMode) { gpMode = false; gpFocusReset(); } }, true);
 
@@ -1009,17 +1019,13 @@ export function initMenus() {
     });
   });
 
-  /* 全屏按钮 */
   document.querySelectorAll('.fs-btn').forEach(btn => {
     bindTap(btn, () => { initAudio(); toggleFullscreen(); });
   });
-
-  /* 语言按钮 */
   document.querySelectorAll('.lang-btn').forEach(btn => {
     bindTap(btn, () => { initAudio(); sfxUI(); setLang(btn.dataset.lang); });
   });
 
-  /* 选关翻页 */
   bindTap(document.getElementById('prevPageBtn'), () => {
     if (currentPage > 0) { currentPage--; renderLevelSelect(); sfxUI(); }
   });
@@ -1033,7 +1039,6 @@ export function initMenus() {
     startBGM('menu');
   });
 
-  /* 关卡目标 */
   bindTap(document.getElementById('goalConfirmBtn'), () => {
     closeAllOverlays();
     const id = pendingLevelId;
@@ -1047,7 +1052,6 @@ export function initMenus() {
     document.getElementById('levelGoalModal').classList.remove('show');
   });
 
-  /* 胜利 */
   bindTap(document.getElementById('vicNextBtn'), () => {
     closeAllOverlays();
     const nextId = Math.min(16, state.currentLevel + 1);
@@ -1055,7 +1059,6 @@ export function initMenus() {
   });
   bindTap(document.getElementById('vicMenuBtn'), backToLevelSelect);
 
-  /* 失败 */
   bindTap(document.getElementById('restartBtn'), () => {
     closeAllOverlays();
     restartGame();
