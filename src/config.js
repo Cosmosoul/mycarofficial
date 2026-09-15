@@ -1,6 +1,5 @@
-﻿/* ============================================================
+/* ============================================================
    config.js —— 所有数值 / 关卡 / 解锁规则 / 进度存档
-   修改游戏手感、难度曲线、解锁条件 → 只改这里
    ============================================================ */
 
 import { loadJSON, saveJSON } from '@/platform.js';
@@ -25,8 +24,8 @@ const Tuning = {
     spawnRadiusMin: 20, spawnRadiusMax: 50,
   },
   AI: {
-    flankRatio: 0.35, rearRatio: 0.20, separationWeight: 1.5,
-    prediction: 0.5, flankAngle: 2.2, rearAngle: 0.4, orbitSpeed: 0.5,
+    flankRatio: 0.12, rearRatio: 0.08, separationWeight: 1.5,
+    prediction: 0.5, flankAngle: 2.0, rearAngle: 0.4, orbitSpeed: 0.5,
   },
   Physics:   { gravity: 60, airDrag: 0.4 },
   Particles: { count: 18, bossCount: 60, speed: 14, gravity: 70, life: 0.85 },
@@ -128,9 +127,6 @@ export function saveLevelResult(id, stars, time) {
 
 /* ============================================================
    4. 车辆解锁规则
-   —— 车辆数值在 content/vehicles.js，这里只负责「是否解锁」
-   —— default: true 表示开局即解锁；这些车不会被
-      getNewlyUnlockedCars 误报为「新解锁」
    ============================================================ */
 export const CAR_UNLOCK_RULES = {
   /* 开局即解锁 */
@@ -167,7 +163,6 @@ export function isVehicleUnlocked(id) {
   return rule.check();
 }
 
-/* 无限模式通关达到新波次后，检查是否有新解锁车辆 */
 export function getNewlyUnlockedCars() {
   const out = [];
   if (!progress.cars) progress.cars = {};
@@ -182,7 +177,6 @@ export function getNewlyUnlockedCars() {
   return out;
 }
 
-/* 启动时回填一次（玩家在旧版本已达成条件但未记录） */
 (function backfillCarUnlocks() {
   let changed = false;
   if (!progress.cars) progress.cars = {};
@@ -196,7 +190,6 @@ export function getNewlyUnlockedCars() {
   if (changed) saveProgress();
 })();
 
-/* 无限模式记录最佳波次 */
 export function recordInfiniteBest(waves) {
   const best = Math.max(progress.infiniteBest || 0, waves);
   if (best !== (progress.infiniteBest || 0)) {
