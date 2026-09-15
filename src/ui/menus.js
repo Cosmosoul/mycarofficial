@@ -717,9 +717,9 @@ function gpCollectCandidates() {
   }
 
   if (el('garageScreen').classList.contains('show')) {
+    /* ★ 车库只在"车列表 + 关闭"之间导航；按 A 直接选车（见 viewers.js） */
     return keep([
       ...$('#garageList .garage-item'),
-      el('garageSelectBtn'),
       el('garageCloseBtn'),
     ]);
   }
