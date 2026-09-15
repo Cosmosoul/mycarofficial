@@ -20,7 +20,6 @@
 </head>
 <body>
 
-<!-- ==================== 启动页 ==================== -->
 <div id="bootScreen">
   <h1 data-i18n-html="gameTitle">我的<em>超级</em>二手车</h1>
   <div class="boot-sub" data-i18n="subtitle">手动驾驶 × 自动弹幕 × 肉鸽构筑</div>
@@ -28,10 +27,11 @@
   <div class="boot-loading" id="bootLoading" data-i18n="initializing">初始化中…</div>
 </div>
 
-<!-- ==================== 游戏主容器 ==================== -->
 <div id="gameWrapper">
 
-  <!-- ============ HUD ============ -->
+  <!-- ★ 局内滤镜层 -->
+  <div id="gameFxLayer"></div>
+
   <div id="hud">
     <div class="top-bar">
       <div class="hud-card">
@@ -68,7 +68,6 @@
     <div class="skills" id="skillsBar"></div>
   </div>
 
-  <!-- ============ 触屏控件 ============ -->
   <button id="pauseBtn">❚❚</button>
   <div id="joystickBase"><div id="joystickKnob"></div><div id="joystickHint" data-i18n="joystickHint">拖动转向</div></div>
   <div class="touch-btn round" id="touchThrottle"><span class="tb-txt" data-i18n="btnThrottle">油门</span></div>
@@ -76,10 +75,8 @@
   <div class="touch-btn oct" id="touchJump" data-i18n="btnJump">跳跃</div>
   <div class="touch-btn oct" id="touchDodge" data-i18n="btnDodge">闪冲</div>
 
-  <!-- ============ 抽卡 ============ -->
   <div id="cards"><div class="card-row" id="cardRow"></div></div>
 
-  <!-- ============ 暂停菜单 ============ -->
   <div id="pauseMenu">
     <div class="pause-box">
       <h2 data-i18n="paused">暂 停</h2>
@@ -111,9 +108,9 @@
     </div>
   </div>
 
-  <!-- ============ 主菜单 ============ -->
   <div id="startScreen">
     <canvas id="menuBgCanvas"></canvas>
+    <canvas id="menuFxCanvas"></canvas>
     <h1 data-i18n-html="gameTitle">我的<em>超级</em>二手车</h1>
     <div class="sub" data-i18n="subtitle">手动驾驶 × 自动弹幕 × 肉鸽构筑</div>
     <div class="btn-grid">
@@ -129,7 +126,6 @@
     </div>
   </div>
 
-  <!-- ============ 选关 ============ -->
   <div id="levelSelectScreen">
     <h2 data-i18n="selectLevel">选 择 关 卡</h2>
     <div class="level-grid" id="levelGrid"></div>
@@ -141,7 +137,6 @@
     <button class="big-btn" id="levelBackBtn" data-i18n="backToMainMenu">返回主菜单</button>
   </div>
 
-  <!-- ============ 关卡目标 ============ -->
   <div id="levelGoalModal">
     <div class="goal-box">
       <div class="goal-lv" id="goalLv">第 1 关</div>
@@ -157,7 +152,6 @@
     </div>
   </div>
 
-  <!-- ============ 胜利 ============ -->
   <div id="victoryScreen">
     <div class="victory-box">
       <h2 data-i18n="levelClear">关 卡 完 成</h2>
@@ -177,7 +171,6 @@
     </div>
   </div>
 
-  <!-- ============ 失败 ============ -->
   <div id="overScreen">
     <div class="over-box">
       <h2 data-i18n="gameOver">战 斗 结 束</h2>
@@ -195,7 +188,6 @@
     </div>
   </div>
 
-  <!-- ============ 设置 ============ -->
   <div id="settingsScreen" class="modal">
     <div class="settings-box">
       <h2 data-i18n="settingsTitle">设 置</h2>
@@ -221,7 +213,6 @@
     </div>
   </div>
 
-  <!-- ============ 帮助 ============ -->
   <div id="helpScreen" class="modal">
     <div class="help-box">
       <div id="helpBody" data-i18n-html="helpBody"></div>
@@ -229,7 +220,6 @@
     </div>
   </div>
 
-  <!-- ============ 鉴赏 ============ -->
   <div id="galleryScreen">
     <div class="gallery-box">
       <div class="gallery-header">
@@ -244,8 +234,6 @@
         <button class="gtab" data-gtab="bgm" data-i18n="tabBgm">BGM 鉴 赏</button>
       </div>
       <div class="gallery-body">
-
-        <!-- 图鉴：单位 -->
         <div class="gallery-pane active" id="galleryPaneModel">
           <div class="gallery-content">
             <div class="gallery-list" id="galleryList">
@@ -275,7 +263,6 @@
           </div>
         </div>
 
-        <!-- 图鉴：BGM 播放器 -->
         <div class="gallery-pane" id="galleryPaneBgm">
           <div class="bgm-side">
             <div class="bgm-side-hd">
@@ -314,12 +301,10 @@
             <div class="bgm-tip" id="bgmTip" data-i18n="bgmTip">点 击 曲 目 试 听</div>
           </div>
         </div>
-
       </div>
     </div>
   </div>
 
-  <!-- ============ 车库 ============ -->
   <div id="garageScreen">
     <div class="gallery-box">
       <div class="gallery-header">
@@ -344,20 +329,17 @@
     </div>
   </div>
 
-  <!-- ============ 剧情 ============ -->
   <div id="storyScreen">
     <canvas id="storyCanvas"></canvas>
     <div id="storyText"></div>
     <div id="storySkip" data-i18n="storySkip">点 击 跳 过</div>
   </div>
 
-  <!-- ============ 旋转提示 ============ -->
   <div id="rotateHint">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
     <div data-i18n="rotateHint">请将手机横过来</div>
   </div>
 
-  <!-- ============ 特效层 ============ -->
   <div id="dmgLayer"></div>
   <div id="whiteFlash"></div>
   <div id="dangerVignette"></div>
