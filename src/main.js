@@ -1,39 +1,31 @@
 /* ============================================================
    main.js —— 唯一入口
-   · 初始化 three.js / 场景 / 地形 / 系统 / UI
-   · 主循环：boot / menu / story / playing 四个阶段
    ============================================================ */
 
 import * as THREE from 'three';
 
-/* ---------- core ---------- */
 import {
   scene, camera, renderer, emit,
   state, player, selectedCarId,
 } from '@/core.js';
 import { mountRenderer } from '@/core.js';
 
-/* ---------- platform ---------- */
 import {
   platform, installKeyboard, onResize, emitResize,
   isForcedRotate,
 } from '@/platform.js';
 
-/* ---------- i18n ---------- */
 import { applyLanguage, getLang } from '@/i18n.js';
 
-/* ---------- content ---------- */
 import { attachZombieMeshes } from '@/content/enemies.js';
 import { pickRandomMap } from '@/content/maps.js';
 import { V } from '@/content/vehicles.js';
 
-/* ---------- audio ---------- */
 import {
   initAudio, updateEngineSound, startBGM, stopBGM,
   pickRandomGameTrack,
 } from '@/audio.js';
 
-/* ---------- fx ---------- */
 import {
   initFxLayer, initSpeedLines, resizeSpeedLineCanvas, drawSpeedOverlay,
   updateSpeedFx, getSpeedFxIntensity, emitExhaustFlames, updateExhaustFlames,
@@ -41,7 +33,6 @@ import {
   updateEnemyBullets, setCarMeshY,
 } from '@/fx.js';
 
-/* ---------- world / entities ---------- */
 import {
   buildTerrain, updateDestructibles, updateDebris, setMapType,
 } from '@/world.js';
@@ -49,17 +40,14 @@ import {
   rebuildCarMesh, resetEnemies, attachEnemyMeshes, getCarMesh,
 } from '@/entities.js';
 
-/* ---------- systems ---------- */
 import {
   initGameplay, resetGame, updateSpawning, updateEnemies, updatePlayer,
   updateSkills, checkRam, checkPointOverflow,
   doDodge, doJump, triggerGameOver,
 } from '@/systems/gameplay.js';
 
-/* ---------- gamepad ---------- */
 import { initGamepad, pollGamepad } from '@/gamepad.js';
 
-/* ---------- ui ---------- */
 import { initHud, tickHud } from '@/ui/hud.js';
 import { initMenus, tickMenus } from '@/ui/menus.js';
 import { initViewers, tickViewers } from '@/ui/viewers.js';
@@ -67,31 +55,116 @@ import { initBgmPlayer, tickBgmPlayer } from '@/ui/bgm-player.js';
 import { initStory, onStoryResize } from '@/ui/story.js';
 
 /* ============================================================
-   1. 注入 THREE 向量到全局状态
+   0. 注入全局样式（主菜单 FX + 局内滤镜）
+   ============================================================ */
+function injectStyle() {
+  if (document.getElementById('mainStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'mainStyle';
+  style.textContent = `
+    /* ========== 主菜单：故障 + 做旧 ========== */
+    #startScreen { isolation: isolate; }
+    #menuBgCanvas {
+      position: absolute !important;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      z-index: 0;
+    }
+    #menuFxCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      mix-blend-mode: screen;
+      opacity: 0.55;
+      image-rendering: pixelated;
+    }
+    #startScreen > h1,
+    #startScreen > .sub,
+    #startScreen > .btn-grid,
+    #startScreen > #langSwitch {
+      position: relative;
+      z-index: 2;
+    }
+    #startScreen > h1 {
+      text-shadow: 0 0 12px rgba(79, 221, 192, 0.35), 0 0 32px rgba(255, 138, 60, 0.25);
+    }
+    /* 复古做旧：轻微暗角 + 扫描线，叠在最上面（不影响交互） */
+    #startScreen::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      background:
+        radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(0,0,0,0.55) 100%),
+        repeating-linear-gradient(
+          0deg,
+          rgba(0,0,0,0.18) 0px,
+          rgba(0,0,0,0.18) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+      mix-blend-mode: multiply;
+      opacity: 0.55;
+    }
+
+    /* ========== 局内：滤镜层 ========== */
+    #gameFxLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 200;
+      background: radial-gradient(ellipse at 50% 45%, transparent 30%, rgba(0,0,0,0.22) 70%, rgba(0,0,0,0.55) 100%);
+      mix-blend-mode: multiply;
+    }
+    #gameFxLayer::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.65'/></svg>");
+      background-size: 140px 140px;
+      opacity: 0.055;
+      mix-blend-mode: overlay;
+    }
+    /* 3D 渲染器色调微调 */
+    #gameRenderCanvas {
+      filter: contrast(1.07) saturate(1.12) brightness(0.985);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+/* ============================================================
+   1. 注入 THREE 向量
    ============================================================ */
 player.pos = new THREE.Vector3(0, 0, 0);
 player.dodgeStartPos = new THREE.Vector3();
 player.dodgeEndPos = new THREE.Vector3();
 
 /* ============================================================
-   2. 挂载渲染器 / 加入敌人 InstancedMesh / 初始化特效层
+   2. 装配
    ============================================================ */
+injectStyle();
 mountRenderer();
+/* ★ 给 3D 渲染器 canvas 加 id，便于 CSS 定位 */
+if (renderer.domElement) renderer.domElement.id = 'gameRenderCanvas';
 attachEnemyMeshes();
 initFxLayer();
 initSpeedLines();
 
 /* ============================================================
-   3. 键鼠 / 键盘
+   3. 键盘
    ============================================================ */
 installKeyboard((e) => {
-  /* 游戏内快捷操作 */
   if (e.code === 'KeyK' && state.phase === 'playing') doDodge();
   if (e.code === 'Space' && state.phase === 'playing') { e.preventDefault(); doJump(); }
   if (state.phase === 'story' && (e.code === 'Space' || e.code === 'Enter')) {
     document.getElementById('storyScreen').click();
   }
-  /* Esc 与卡牌快捷键由 menus.js 处理 */
   emit('keydown', e);
 });
 
@@ -107,13 +180,13 @@ onResize((w, h) => {
     menuRenderer.setSize(w, h, false);
     if (menuUniforms) menuUniforms.uAspect.value = w / h;
   }
+  resizeMenuFx();
   onStoryResize(w, h);
   resizeSpeedLineCanvas();
   checkOrientation();
   updateFullscreenButtons();
 });
 
-/* 强制旋转时更新尺寸 */
 function checkOrientation() {
   if (!platform.isMobile) {
     document.getElementById('rotateHint').style.display = 'none';
@@ -127,7 +200,6 @@ function checkOrientation() {
   document.getElementById('rotateHint').style.display = isPortrait ? 'flex' : 'none';
 }
 
-/* 全屏按钮文案同步 */
 function updateFullscreenButtons() {
   const fs = !!(document.fullscreenElement || document.webkitFullscreenElement
             || document.mozFullScreenElement || document.msFullscreenElement);
@@ -230,7 +302,90 @@ function initMenuBg() {
 }
 
 /* ============================================================
-   6. 装配：地形 / 车 / UI
+   5b. 主菜单 FX：故障 + noise
+   ============================================================ */
+const menuFxCanvas = document.getElementById('menuFxCanvas');
+let menuFxCtx = null;
+let menuNoiseTile = null;
+let menuGlitchTimer = 0;
+let menuGlitchActive = 0;
+
+function initMenuFx() {
+  if (!menuFxCanvas || menuFxCtx) return;
+  menuFxCtx = menuFxCanvas.getContext('2d');
+
+  /* 生成一次性 noise tile */
+  const size = 128;
+  menuNoiseTile = document.createElement('canvas');
+  menuNoiseTile.width = menuNoiseTile.height = size;
+  const nctx = menuNoiseTile.getContext('2d');
+  const img = nctx.createImageData(size, size);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    img.data[i] = v;
+    img.data[i + 1] = v;
+    img.data[i + 2] = v;
+    img.data[i + 3] = 40;
+  }
+  nctx.putImageData(img, 0, 0);
+  resizeMenuFx();
+}
+
+function resizeMenuFx() {
+  if (!menuFxCanvas) return;
+  const w = window.innerWidth, h = window.innerHeight;
+  const scale = 0.5;
+  menuFxCanvas.width = Math.max(2, Math.floor(w * scale));
+  menuFxCanvas.height = Math.max(2, Math.floor(h * scale));
+}
+
+function drawMenuFx(dt) {
+  if (!menuFxCtx || !menuNoiseTile) return;
+  const ctx = menuFxCtx;
+  const w = menuFxCanvas.width, h = menuFxCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  /* noise 铺满 */
+  ctx.globalAlpha = 0.55;
+  for (let y = 0; y < h; y += 128) {
+    for (let x = 0; x < w; x += 128) {
+      ctx.drawImage(menuNoiseTile, x, y);
+    }
+  }
+
+  /* 扫描线 */
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+
+  /* 随机故障 */
+  menuGlitchTimer -= dt;
+  if (menuGlitchTimer <= 0 && Math.random() < 0.10) {
+    menuGlitchTimer = 0.7 + Math.random() * 2.5;
+    menuGlitchActive = 0.12 + Math.random() * 0.10;
+  }
+  if (menuGlitchActive > 0) {
+    menuGlitchActive -= dt;
+    const slices = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < slices; i++) {
+      const y = Math.random() * h;
+      const sh = 1 + Math.random() * 6;
+      const dx = (Math.random() - 0.5) * w * 0.25;
+      const color = [
+        'rgba(0, 255, 255, 0.32)',
+        'rgba(255, 0, 255, 0.28)',
+        'rgba(255, 80, 80, 0.22)',
+      ][Math.floor(Math.random() * 3)];
+      ctx.fillStyle = color;
+      ctx.fillRect(dx, y, w, sh);
+    }
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+/* ============================================================
+   6. 装配
    ============================================================ */
 setMapType('park');
 buildTerrain('park');
@@ -239,7 +394,6 @@ rebuildCarMesh();
 
 applyLanguage();
 
-/* 一次性初始化所有子系统 */
 initGameplay();
 initHud();
 initMenus();
@@ -247,7 +401,6 @@ initViewers();
 initBgmPlayer();
 initStory();
 
-/* ★ 手柄初始化（连接检测 + 主动扫描） */
 initGamepad();
 
 /* ============================================================
@@ -259,22 +412,18 @@ function animate() {
   requestAnimationFrame(animate);
   const rawDt = Math.min(clock.getDelta(), 0.05);
 
-  /* ---------- boot：只渲染初始场景 ---------- */
   if (state.phase === 'boot') {
     renderer.render(scene, camera);
     return;
   }
 
-  /* ★ 手柄：每帧轮询 + 驱动菜单导航（所有阶段都跑） */
   pollGamepad();
   tickMenus();
 
-  /* ---------- 引擎声浪 ---------- */
   updateEngineSound(rawDt);
 
-  /* ---------- menu：背景 shader + viewer / BGM / 车库 ---------- */
   if (state.phase === 'menu') {
-    if (!menuBgStarted) initMenuBg();
+    if (!menuBgStarted) { initMenuBg(); initMenuFx(); }
     if (menuRenderer) {
       menuUniforms.uTime.value = performance.now() * 0.001;
       const cw = menuBgCanvas.clientWidth || 1;
@@ -283,30 +432,24 @@ function animate() {
       menuRenderer.setSize(cw, ch, false);
       menuRenderer.render(menuScene, menuCamera);
     }
+    drawMenuFx(rawDt);
     tickViewers(rawDt);
     tickBgmPlayer();
     return;
   }
 
-  /* ---------- story：由 story.js 自己的 raf 驱动 ---------- */
-  if (state.phase === 'story') {
-    return;
-  }
+  if (state.phase === 'story') return;
 
-  /* ---------- viewer / garage / bgm 面板 ---------- */
   tickViewers(rawDt);
   tickBgmPlayer();
 
-  /* ---------- FOV kick 衰减 ---------- */
   if (state.fovKick > 0) {
     state.fovKick *= Math.exp(-14 * rawDt);
     if (state.fovKick < 0.05) state.fovKick = 0;
   }
 
-  /* ---------- 速度感 ---------- */
   updateSpeedFx(rawDt);
 
-  /* ---------- 计算时间缩放 ---------- */
   let ts = state.timeScale;
   if (state.bulletTime > 0) {
     state.bulletTime -= rawDt;
@@ -320,7 +463,6 @@ function animate() {
   }
   const dt = rawDt * ts;
 
-  /* ---------- 游戏 / 卡牌阶段 ---------- */
   if (state.phase === 'playing' || state.phase === 'card') {
     state.elapsed += rawDt;
 
@@ -336,7 +478,6 @@ function animate() {
     if (player.hp <= 0) triggerGameOver();
   }
 
-  /* ---------- 尾焰 ---------- */
   {
     const carMesh = getCarMesh();
     if (carMesh) setCarMeshY(carMesh.position.y);
@@ -346,17 +487,14 @@ function animate() {
   }
   updateExhaustFlames(dt);
 
-  /* ---------- 全局特效 ---------- */
   updateLightning(rawDt);
   updateFx(rawDt);
   updateParticles(rawDt);
   updateDestructibles(rawDt);
   updateDebris(rawDt);
 
-  /* ---------- HUD ---------- */
   tickHud();
 
-  /* ---------- 屏幕震动 ---------- */
   if (state.screenShake > 0) {
     state.screenShake = Math.max(0, state.screenShake - rawDt * 60);
     const s = state.screenShake * 0.35;
@@ -366,17 +504,12 @@ function animate() {
     renderer.domElement.style.transform = '';
   }
 
-  /* ---------- 速度线 overlay ---------- */
   drawSpeedOverlay(getSpeedFxIntensity());
 
-  /* ---------- 主渲染 ---------- */
   renderer.render(scene, camera);
 }
 
 animate();
 
-/* ============================================================
-   8. 启动后续
-   ============================================================ */
 checkOrientation();
 emitResize();
