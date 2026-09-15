@@ -231,8 +231,6 @@ function openLevelGoal(id) {
   }
   document.getElementById('goalReward').textContent = getLevelRewardText(id);
   document.getElementById('levelGoalModal').classList.add('show');
-
-  /* ★ 每次打开时，清空该弹窗的历史焦点，保证默认落在"开始挑战" */
   gpFocusedByContext.delete('levelGoal');
 }
 
@@ -621,13 +619,16 @@ function onGlobalKeydown(e) {
 let gpFocused = null;
 let gpMode = false;
 let gpLastContext = null;
+let gpLastIndex = 0;
 const gpFocusedByContext = new Map();
 
-/* ★ 只有这些"持久菜单"会在离开时记住焦点。其它弹窗每次重新打开从 list[0] 开始 */
-const PERSISTENT_CONTEXTS = new Set(['mainMenu', 'pause', 'settings', 'gallery', 'garage', 'bgm', 'levelSelect']);
+const PERSISTENT_CONTEXTS = new Set([
+  'mainMenu', 'pause', 'settings', 'gallery', 'garage', 'bgm', 'levelSelect',
+]);
 
 function gpFocusReset() {
   gpFocused = null;
+  gpLastIndex = 0;
   document.querySelectorAll('.gp-focus').forEach(el => el.classList.remove('gp-focus'));
 }
 
@@ -640,10 +641,18 @@ function gpApplyFocus(el) {
   }
 }
 
+/* ★ 修复 1：去掉视口裁剪判断；用 rect + display/visibility 检查（允许 opacity 过渡） */
 function gpVisible(el) {
   if (!el || !el.isConnected) return false;
-  if (el.offsetParent === null) return false;
-  return el.offsetWidth > 0 || el.offsetHeight > 0;
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 && r.height <= 0) return false;
+  let n = el;
+  while (n && n !== document.body) {
+    const s = getComputedStyle(n);
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    n = n.parentElement;
+  }
+  return true;
 }
 
 function gpFilter(list) {
@@ -677,7 +686,6 @@ function gpCollectCandidates() {
     return gpFilter($('#settingsScreen button, #settingsScreen input[type="range"]'));
   }
   if (document.getElementById('levelGoalModal').classList.contains('show')) {
-    /* ★ 顺序：先"开始挑战"，后"取消" —— 默认焦点落在"开始挑战" */
     return gpFilter([document.getElementById('goalConfirmBtn'), document.getElementById('goalCancelBtn')]);
   }
   if (document.getElementById('victoryScreen').classList.contains('show')) {
@@ -741,7 +749,7 @@ function gpCollectCandidates() {
   return [];
 }
 
-/* ★ 空间导航：横向惩罚 3.0 —— 有效防止"往旁边拨却跳到斜上/斜下方" */
+/* 空间导航：横向惩罚 3.0 */
 function gpSpatialFind(from, dir, list) {
   if (!from || !from.isConnected) return list[0] || null;
   const fr = from.getBoundingClientRect();
@@ -777,9 +785,35 @@ function gpSpatialFind(from, dir, list) {
   return best;
 }
 
+/* ★ 修复 3：找当前界面的可滚动容器（用于列表只有 1 项时的上下滚动） */
+function gpFindScrollable(fromEl) {
+  let n = fromEl;
+  while (n && n !== document.body) {
+    const s = getComputedStyle(n);
+    if ((s.overflowY === 'auto' || s.overflowY === 'scroll')
+        && n.scrollHeight > n.clientHeight + 2) {
+      return n;
+    }
+    n = n.parentElement;
+  }
+  return null;
+}
+
 function gpMoveFocus(dir, list) {
   if (!gpFocused || list.length === 0) return;
-  if (list.length === 1) return;
+
+  /* ★ 修复 3：只有一个可聚焦元素时，上下方向改为滚动父容器 */
+  if (list.length === 1) {
+    if (dir === 'up' || dir === 'down') {
+      const scroller = gpFindScrollable(list[0]);
+      if (scroller) {
+        const delta = (dir === 'up' ? -80 : 80);
+        scroller.scrollBy({ top: delta, behavior: 'smooth' });
+      }
+    }
+    return;
+  }
+
   const idx = list.indexOf(gpFocused);
   if (idx < 0) { gpApplyFocus(list[0]); return; }
 
@@ -859,10 +893,11 @@ function gpTick() {
 
   const ctx = gpContextKey();
   const ctxChanged = (ctx !== gpLastContext);
-  gpLastContext = ctx;
 
-  if (!gpFocused || !list.includes(gpFocused)) {
-    /* ★ 只对"持久菜单"恢复记忆焦点；一次性弹窗永远回到 list[0] */
+  /* context 切换：记忆恢复 / 首项 */
+  if (ctxChanged) {
+    gpLastContext = ctx;
+    gpLastIndex = 0;
     const useMemory = ctx && PERSISTENT_CONTEXTS.has(ctx);
     const remembered = useMemory ? gpFocusedByContext.get(ctx) : null;
     if (remembered && list.includes(remembered)) {
@@ -870,13 +905,23 @@ function gpTick() {
     } else {
       gpApplyFocus(list[0]);
     }
+  } else if (!gpFocused || !list.includes(gpFocused)) {
+    /* ★ 修复 2：同一 context 内焦点元素被销毁（列表重建），用索引恢复 */
+    if (gpLastIndex >= 0 && gpLastIndex < list.length) {
+      gpApplyFocus(list[gpLastIndex]);
+    } else {
+      gpApplyFocus(list[0]);
+    }
   }
 
-  /* 只在持久菜单里记录焦点 */
+  /* 记录当前焦点 */
+  const curIdx = list.indexOf(gpFocused);
+  if (curIdx >= 0) gpLastIndex = curIdx;
   if (ctx && PERSISTENT_CONTEXTS.has(ctx) && gpFocused) {
     gpFocusedByContext.set(ctx, gpFocused);
   }
 
+  /* 导航 */
   if (gpIsSlider(gpFocused)) {
     let changed = false;
     if (pad.navLeftHeld) {
@@ -899,6 +944,7 @@ function gpTick() {
     if (pad.navRight) gpMoveFocus('right', list);
   }
 
+  /* 确认 */
   if (pad.confirmPressed) {
     if (gpFocused && gpFocused.isConnected && typeof gpFocused.click === 'function') {
       sfxUI();
@@ -907,10 +953,12 @@ function gpTick() {
     }
   }
 
+  /* 返回 */
   if (pad.cancelPressed) {
     gpCancel();
   }
 
+  /* LB / RB 切图鉴页签 */
   if (pad.lbPressed || pad.rbPressed) {
     const tabs = [...document.querySelectorAll('.gtab')];
     if (tabs.length > 0) {
@@ -923,6 +971,7 @@ function gpTick() {
         sfxUI();
         visible[nextIdx].click();
         gpFocused = null;
+        gpLastIndex = 0;
       }
     }
   }
