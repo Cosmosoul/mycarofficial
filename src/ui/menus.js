@@ -33,7 +33,7 @@ import { clearDmgNumbers } from '@/ui/hud.js';
 import { vehName } from '@/content/vehicles.js';
 import { shouldPlayFirstStory } from '@/ui/story.js';
 import {
-  pad, rumbleLight, panicRumble,
+  pad, rumbleLight, panicRumble, lockStickNav,
   invertY, setInvertY,
   rumbleEnabled, setRumbleEnabled,
 } from '@/gamepad.js';
@@ -591,6 +591,9 @@ function initCardUI() {
     });
     cardsEl.classList.add('show');
     gpFocusReset();
+
+    /* ★ 锁定摇杆导航：必须回中才能开始切卡 */
+    lockStickNav();
   });
 
   on('cards:hide', () => {
@@ -613,11 +616,7 @@ function onGlobalKeydown(e) {
 }
 
 /* ============================================================
-   10. 手柄菜单导航 —— 双模式
-   · 主菜单 / 选关 / 车库 / 图鉴：坐标导航
-   · 暂停 / 设置 / 卡牌 / 弹窗：DOM 顺序线性
-   · 滑条：左右改值，上下切焦点
-   · 单元素界面：上下滚动父容器
+   10. 手柄菜单导航
    ============================================================ */
 
 let gpFocused = null;
@@ -643,7 +642,6 @@ function gpApplyFocus(el) {
     el.classList.add('gp-focus');
     try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
 
-    /* ★ 车库：焦点落到车列表项时，广播事件让 viewers.js 立即切换预览 */
     if (el.classList.contains('garage-item') && el.dataset.id) {
       emit('garage:focusPreview', { id: el.dataset.id });
     }
@@ -938,18 +936,44 @@ function gpTick() {
     gpCancel();
   }
 
+  /* ★ LB/RB：选关翻页 / 图鉴切页签 */
   if (pad.lbPressed || pad.rbPressed) {
-    const tabs = [...document.querySelectorAll('.gtab')];
-    if (tabs.length > 0) {
-      const cur = tabs.findIndex(t => t.classList.contains('active'));
-      const next = pad.rbPressed
-        ? (cur + 1) % tabs.length
-        : (cur - 1 + tabs.length) % tabs.length;
-      sfxUI();
-      tabs[next].click();
-      gpFocused = null;
-      gpLastIndex = 0;
+    /* 选关界面：翻页 */
+    if (document.getElementById('levelSelectScreen').classList.contains('show')) {
+      if (pad.rbPressed && currentPage < TOTAL_PAGES - 1) {
+        currentPage++;
+        renderLevelSelect();
+        sfxUI();
+      } else if (pad.lbPressed && currentPage > 0) {
+        currentPage--;
+        renderLevelSelect();
+        sfxUI();
+      }
     }
+    /* 图鉴界面：切页签 */
+    else if (document.getElementById('galleryScreen').classList.contains('show')) {
+      const tabs = [...document.querySelectorAll('.gtab')];
+      if (tabs.length > 0) {
+        const cur = tabs.findIndex(t => t.classList.contains('active'));
+        const next = pad.rbPressed
+          ? (cur + 1) % tabs.length
+          : (cur - 1 + tabs.length) % tabs.length;
+        sfxUI();
+        tabs[next].click();
+        gpFocused = null;
+        gpLastIndex = 0;
+      }
+    }
+  }
+
+  if (window.__gpDebug) {
+    console.log(
+      '[gp]', ctx,
+      'count=' + list.length,
+      'idx=' + list.indexOf(gpFocused),
+      'locked=' + pad.stickNavLocked,
+      'focus=' + (gpFocused && (gpFocused.id || gpFocused.className || gpFocused.tagName))
+    );
   }
 }
 
