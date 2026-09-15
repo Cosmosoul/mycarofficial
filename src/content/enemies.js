@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    content/enemies.js —— 敌人内容目录
    ============================================================ */
 
@@ -221,7 +221,6 @@ export function attachZombieMeshes(scene) {
   for (const mesh of Object.values(zombieMeshes)) scene.add(mesh);
 }
 
-/* ★ 新增：返回所有 Boss rig 的根节点，供 entities.js 一次性挂到场景 */
 export function getEnemyRoots() {
   return [bossRig.root, ufoRig.root];
 }
@@ -331,7 +330,7 @@ bossRig.root.add(bossRig.body, bossRig.head, bossRig.armLPivot, bossRig.armRPivo
 bossRig.root.visible = false;
 
 /* ============================================================
-   3b. ★ 新增：幽浮母舰 BOSS rig
+   3b. 幽浮母舰 BOSS rig
    ============================================================ */
 const ufoBodyMat = new THREE.MeshStandardMaterial({ color: 0x4A6A8A, roughness: 0.35, metalness: 0.85, emissive: 0x0A1A30, emissiveIntensity: 0.5 });
 const ufoDomeMat = new THREE.MeshStandardMaterial({ color: 0x80C8E0, roughness: 0.10, metalness: 0.4, transparent: true, opacity: 0.55, emissive: 0x2080C0, emissiveIntensity: 0.8 });
@@ -377,7 +376,7 @@ ufoRing.position.y = -0.20;
 ufoRig.disc.add(ufoRing);
 ufoRig.ring = ufoRing;
 
-ufoRig.disc.position.y = 0.0;
+ufoRig.disc.position.y = 0;
 ufoRig.root.add(ufoRig.disc);
 ufoRig.root.visible = false;
 
@@ -392,11 +391,11 @@ export const ENEMY_DEFS = {
   shield: { hp: 80,  speed: 10, dmg: 15, cloth: 0x1E5A78, skin: 0x7E98A8, radius: 1.5, scale: { x: 1.3,  y: 1.05, z: 1.3  }, isBoss: false },
   elite:  { hp: 300, speed: 12, dmg: 40, cloth: 0x5A1E70, skin: 0xA868C0, radius: 2.0, scale: { x: 1.4,  y: 1.5,  z: 1.4  }, isBoss: false },
 
-  /* ---- 新增 4 种小僵尸 ---- */
-  runner: { hp: 18,  speed: 30, dmg: 20, cloth: 0xC0282C, skin: 0x6A2A28, radius: 1.0, scale: { x: 0.95, y: 0.95, z: 0.95 }, isBoss: false },
-  dasher: { hp: 35,  speed: 14, dmg: 30, cloth: 0x3A2060, skin: 0x8A60C8, radius: 1.2, scale: { x: 1.0,  y: 1.0,  z: 1.0  }, isBoss: false },
-  jumper: { hp: 50,  speed: 12, dmg: 28, cloth: 0x9A5A18, skin: 0xE0A040, radius: 1.3, scale: { x: 1.1,  y: 1.1,  z: 1.1  }, isBoss: false },
-  suicide:{ hp: 30,  speed: 17, dmg: 35, cloth: 0x801818, skin: 0xB04848, radius: 1.3, scale: { x: 1.2,  y: 1.0,  z: 1.2  }, isBoss: false },
+  /* ---- 新增 4 种小僵尸（数值下调后） ---- */
+  runner: { hp: 22,  speed: 26, dmg: 12, cloth: 0xC0282C, skin: 0x6A2A28, radius: 1.0, scale: { x: 0.95, y: 0.95, z: 0.95 }, isBoss: false },
+  dasher: { hp: 38,  speed: 13, dmg: 16, cloth: 0x3A2060, skin: 0x8A60C8, radius: 1.2, scale: { x: 1.0,  y: 1.0,  z: 1.0  }, isBoss: false },
+  jumper: { hp: 55,  speed: 11, dmg: 18, cloth: 0x9A5A18, skin: 0xE0A040, radius: 1.3, scale: { x: 1.1,  y: 1.1,  z: 1.1  }, isBoss: false },
+  suicide:{ hp: 32,  speed: 15, dmg: 20, cloth: 0x801818, skin: 0xB04848, radius: 1.3, scale: { x: 1.2,  y: 1.0,  z: 1.2  }, isBoss: false },
 
   /* ---- 原有 BOSS ---- */
   boss:      { hp: 3000, speed: 9, dmg: 60, cloth: 0x7A1828, skin: 0xE05060, radius: 4.0, scale: { x: 1, y: 1, z: 1 }, isBoss: true, bossKind: 'zombie' },
@@ -430,32 +429,26 @@ const ENEMY_I18N = {
     zh: { name: '💜 精英僵尸', desc: '健身教练的尸体。3 米高，会召唤小弟，还会举铁（举的其实是被感染的哑铃）。', stats: ['HP 300', '速度 12 m/s', '召唤小怪'] },
     en: { name: '💜 Elite Zombie', desc: 'The corpse of a fitness coach. Three metres tall, summons minions, and lifts weights (which are actually infected dumbbells).', stats: ['HP 300', 'Speed 12 m/s', 'Summons mobs'] },
   },
-
-  /* ---- 新增 4 种僵尸 ---- */
   runner: {
-    zh: { name: '🏃 疾行僵尸', desc: '生前是短跑冠军，死后双腿仍在疯狂运转。它是所有僵尸里跑得最快的，一眨眼就到你面前。', stats: ['HP 18', '速度 30 m/s', '伤害 20/s'] },
-    en: { name: '🏃 Runner Zombie', desc: 'A sprinting champion in life, its legs still churn madly after death. The fastest zombie of them all — blink and it is already on top of you.', stats: ['HP 18', 'Speed 30 m/s', 'Damage 20/s'] },
+    zh: { name: '🏃 疾行僵尸', desc: '生前是短跑冠军，死后双腿仍在疯狂运转。它是所有僵尸里跑得最快的，一眨眼就到你面前。', stats: ['HP 22', '速度 26 m/s', '伤害 12/s'] },
+    en: { name: '🏃 Runner Zombie', desc: 'A sprinting champion in life, its legs still churn madly after death. The fastest zombie of them all — blink and it is already on top of you.', stats: ['HP 22', 'Speed 26 m/s', 'Damage 12/s'] },
   },
   dasher: {
-    zh: { name: '🌪 瞬闪僵尸', desc: '身体被虚空撕裂过，能短距离瞬移。别以为拉开了距离就安全——它一秒后就会出现在你脸上。', stats: ['HP 35', '速度 14 m/s', '冷却 3s 瞬移'] },
-    en: { name: '🌪 Dasher Zombie', desc: 'Its body was torn by the void, allowing short-range teleportation. Do not think distance keeps you safe — it will be in your face a second later.', stats: ['HP 35', 'Speed 14 m/s', '3s blink CD'] },
+    zh: { name: '🌪 瞬闪僵尸', desc: '身体被虚空撕裂过，能短距离瞬移。别以为拉开了距离就安全——它一秒后就会出现在你脸上。', stats: ['HP 38', '速度 13 m/s', '冷却 3s 瞬移'] },
+    en: { name: '🌪 Dasher Zombie', desc: 'Its body was torn by the void, allowing short-range teleportation. Do not think distance keeps you safe — it will be in your face a second later.', stats: ['HP 38', 'Speed 13 m/s', '3s blink CD'] },
   },
   jumper: {
-    zh: { name: '🦘 跳击僵尸', desc: '腿部肌肉异常发达，能一跃数米高。落地时砸出的冲击波足以掀翻一辆车。', stats: ['HP 50', '速度 12 m/s', '落地 AOE 7m'] },
-    en: { name: '🦘 Jumper Zombie', desc: 'Its leg muscles are grotesquely overgrown, letting it leap metres into the air. The shockwave from its landing can flip a car.', stats: ['HP 50', 'Speed 12 m/s', 'Land AoE 7m'] },
+    zh: { name: '🦘 跳击僵尸', desc: '腿部肌肉异常发达，能一跃数米高。落地时砸出的冲击波足以掀翻一辆车。', stats: ['HP 55', '速度 11 m/s', '落地 AOE 7m'] },
+    en: { name: '🦘 Jumper Zombie', desc: 'Its leg muscles are grotesquely overgrown, letting it leap metres into the air. The shockwave from its landing can flip a car.', stats: ['HP 55', 'Speed 11 m/s', 'Land AoE 7m'] },
   },
   suicide: {
-    zh: { name: '🧨 殉爆僵尸', desc: '身体里塞满了不稳定的化学物质。一旦被击杀，就会引爆自己，不分敌我，炸翻周围的一切。', stats: ['HP 30', '速度 17 m/s', '死亡 AOE 8m'] },
-    en: { name: '🧨 Martyr Zombie', desc: 'Its body is packed with unstable chemicals. The moment it is killed it detonates — friend or foe, everything nearby goes flying.', stats: ['HP 30', 'Speed 17 m/s', 'Death AoE 8m'] },
+    zh: { name: '🧨 殉爆僵尸', desc: '身体里塞满了不稳定的化学物质。一旦被击杀，就会引爆自己，不分敌我，炸翻周围的一切。', stats: ['HP 32', '速度 15 m/s', '死亡 AOE 7m'] },
+    en: { name: '🧨 Martyr Zombie', desc: 'Its body is packed with unstable chemicals. The moment it is killed it detonates — friend or foe, everything nearby goes flying.', stats: ['HP 32', 'Speed 15 m/s', 'Death AoE 7m'] },
   },
-
-  /* ---- 原有 BOSS ---- */
   boss: {
     zh: { name: '👑 僵尸之王', desc: '整容失败的前健美冠军，现在全身散发着红光。它是这一切的源头——把整个城市变成了他的健身房。', stats: ['HP 3000', '伤害 60/s', '三阶段狂暴'] },
     en: { name: '👑 Zombie King', desc: 'A former bodybuilding champion with a botched surgery, now radiating red light. He is the source of all this — he turned the whole city into his gym.', stats: ['HP 3000', 'Damage 60/s', '3-phase frenzy'] },
   },
-
-  /* ---- 新增 2 种 BOSS ---- */
   boss_slam: {
     zh: { name: '💥 裂地尸王', desc: '它的每一次跳跃都像陨石落地。高高跃起，重重砸下，冲击波撕裂地表，把周围的小僵尸和车辆一起掀飞。', stats: ['HP 3200', '跳砸 CD 7s', '落地 AOE 22m'] },
     en: { name: '💥 Rift King', desc: 'Every leap it takes is like a meteor strike. It soars high, slams down hard, and the shockwave splits the ground — flinging mobs and vehicles alike.', stats: ['HP 3200', 'Slam CD 7s', 'Land AoE 22m'] },
@@ -569,7 +562,6 @@ export function buildViewerBoss() {
   return g;
 }
 
-/* ★ 新增：幽浮母舰的图鉴预览模型 */
 export function buildViewerUfo() {
   const g = new THREE.Group();
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 5.5, 1.6, 32), ufoBodyMat.clone());
