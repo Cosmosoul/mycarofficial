@@ -756,7 +756,7 @@ function gpSpatialFind(from, dir, list) {
   for (const el of list) {
     if (el === from) continue;
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
+    if (r.width === 0 || r.height === 0) continue;
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
     const dx = cx - fcx, dy = cy - fcy;
@@ -819,12 +819,14 @@ function gpMove(dir, list) {
     return;
   }
 
-  /* ★ 主菜单 / 选关：坐标网格导航（支持左右切列） */
+  /* ★ 网格/分栏界面：坐标导航（主菜单、选关、车库、图鉴） */
   const ctx = gpContextKey();
-  if (ctx === 'mainMenu' || ctx === 'levelSelect') {
+  const useSpatial = (ctx === 'mainMenu' || ctx === 'levelSelect'
+                   || ctx === 'garage'   || ctx === 'gallery');
+  if (useSpatial) {
     const next = gpSpatialFind(gpFocused, dir, list);
     if (next) { gpApplyFocus(next); sfxUI(); return; }
-    /* 空间导航找不到就退化到线性 */
+    /* 找不到邻居就退化到线性 */
   }
 
   /* ★ 其他界面：DOM 顺序线性前后 */
