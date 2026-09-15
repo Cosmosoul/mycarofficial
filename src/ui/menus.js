@@ -614,11 +614,10 @@ function onGlobalKeydown(e) {
 
 /* ============================================================
    10. 手柄菜单导航 —— 双模式
-   · 主菜单 / 选关：真实坐标网格导航（支持左右切列）
-   · 其他界面：DOM 顺序线性导航（上下/左右 = 前后）
+   · 主菜单 / 选关 / 车库 / 图鉴：坐标导航
+   · 暂停 / 设置 / 卡牌 / 弹窗：DOM 顺序线性
    · 滑条：左右改值，上下切焦点
    · 单元素界面：上下滚动父容器
-   · 调试：Console 里 `window.__gpDebug = true` 打开日志
    ============================================================ */
 
 let gpFocused = null;
@@ -643,6 +642,11 @@ function gpApplyFocus(el) {
   if (el && el.isConnected) {
     el.classList.add('gp-focus');
     try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+
+    /* ★ 车库：焦点落到车列表项时，广播事件让 viewers.js 立即切换预览 */
+    if (el.classList.contains('garage-item') && el.dataset.id) {
+      emit('garage:focusPreview', { id: el.dataset.id });
+    }
   }
 }
 
@@ -663,7 +667,6 @@ function gpContextKey() {
   return null;
 }
 
-/* ★ 候选元素：用宽松选择器直接从 DOM 抓，保证不漏 toggle */
 function gpCollectCandidates() {
   const $ = (sel) => [...document.querySelectorAll(sel)];
   const el = (id) => document.getElementById(id);
@@ -674,7 +677,6 @@ function gpCollectCandidates() {
   }
 
   if (el('settingsScreen').classList.contains('show')) {
-    /* ★ 直接抓全部 button 和 range，DOM 顺序就是 HTML 顺序 */
     return keep($('#settingsScreen button, #settingsScreen input[type="range"]'));
   }
 
@@ -717,7 +719,6 @@ function gpCollectCandidates() {
   }
 
   if (el('garageScreen').classList.contains('show')) {
-    /* ★ 车库只在"车列表 + 关闭"之间导航；按 A 直接选车（见 viewers.js） */
     return keep([
       ...$('#garageList .garage-item'),
       el('garageCloseBtn'),
@@ -747,7 +748,6 @@ function gpCollectCandidates() {
   return [];
 }
 
-/* 真实坐标的空间导航（只在主菜单 / 选关用） */
 function gpSpatialFind(from, dir, list) {
   const fr = from.getBoundingClientRect();
   const fcx = fr.left + fr.width / 2;
@@ -774,7 +774,6 @@ function gpSpatialFind(from, dir, list) {
       if (dx < 6) continue;
       primary = dx; secondary = Math.abs(dy);
     }
-    /* 主方向为主，次方向惩罚 4 —— 严格防止斜向跳 */
     const score = primary + secondary * 4;
     if (score < bestScore) { bestScore = score; best = el; }
   }
@@ -801,7 +800,6 @@ function gpMove(dir, list) {
     return;
   }
 
-  /* 单元素界面：上下滚动父容器 */
   if (list.length === 1) {
     if (dir === 'up' || dir === 'down') {
       const scroller = gpFindScrollable(list[0]);
@@ -810,7 +808,6 @@ function gpMove(dir, list) {
     return;
   }
 
-  /* 滑条：左右改值 */
   if (gpIsSlider(gpFocused) && (dir === 'left' || dir === 'right')) {
     const step = dir === 'left' ? -5 : 5;
     gpFocused.value = Math.max(0, Math.min(100, parseInt(gpFocused.value) + step));
@@ -819,17 +816,14 @@ function gpMove(dir, list) {
     return;
   }
 
-  /* ★ 网格/分栏界面：坐标导航（主菜单、选关、车库、图鉴） */
   const ctx = gpContextKey();
   const useSpatial = (ctx === 'mainMenu' || ctx === 'levelSelect'
                    || ctx === 'garage'   || ctx === 'gallery');
   if (useSpatial) {
     const next = gpSpatialFind(gpFocused, dir, list);
     if (next) { gpApplyFocus(next); sfxUI(); return; }
-    /* 找不到邻居就退化到线性 */
   }
 
-  /* ★ 其他界面：DOM 顺序线性前后 */
   const idx = list.indexOf(gpFocused);
   let nextIdx;
   if (dir === 'up' || dir === 'left') {
@@ -956,16 +950,6 @@ function gpTick() {
       gpFocused = null;
       gpLastIndex = 0;
     }
-  }
-
-  /* ★ 调试开关：Console 里 window.__gpDebug = true 打开 */
-  if (window.__gpDebug) {
-    console.log(
-      '[gp]', ctx,
-      'count=' + list.length,
-      'idx=' + list.indexOf(gpFocused),
-      'focus=' + (gpFocused && (gpFocused.id || gpFocused.className || gpFocused.tagName))
-    );
   }
 }
 
