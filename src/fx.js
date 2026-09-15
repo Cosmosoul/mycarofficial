@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    fx.js —— 全部视觉效果
    1. 玩家子弹（Points）
    2. 通用粒子（Points）
@@ -80,16 +80,6 @@ for (let i = 0; i < BULLET_MAX; i++) {
   });
 }
 
-/**
- * 生成一发子弹。
- * @param {THREE.Vector3} from 起点
- * @param {THREE.Vector3} to   目标（用于计算方向）
- * @param {number|THREE.Color} color
- * @param {number} dmg
- * @param {string} kind  'basic' | 'aoe_projectile'
- * @param {number} size
- * @param {number} speed
- */
 export function spawnBullet(from, to, color, dmg, kind, size = 1.6, speed = 90) {
   for (const b of bullets) {
     if (b.active) continue;
@@ -109,10 +99,6 @@ export function spawnBullet(from, to, color, dmg, kind, size = 1.6, speed = 90) 
   return null;
 }
 
-/**
- * 更新子弹。命中回调通过事件总线触发——由 gameplay 层在初始化时注册
- * `bullet:hit`（命中敌人）与 `bullet:aoeHit`（AoE 爆炸）。
- */
 export function updateBullets(dt) {
   for (const b of bullets) {
     if (!b.active) continue;
@@ -130,11 +116,9 @@ export function updateBullets(dt) {
       continue;
     }
 
-    /* 普通子弹：交给外部做敌人碰撞检测 */
     _emit('bullet:tick', b);
   }
 
-  /* 写回 GPU */
   let idx = 0;
   for (const b of bullets) {
     if (!b.active) continue;
@@ -157,15 +141,12 @@ export function updateBullets(dt) {
   bulletGeo.attributes.size.needsUpdate = true;
 }
 
-/* 从当前帧中查询：位置附近是否有活跃子弹 */
 export function forEachBullet(fn) {
   for (const b of bullets) if (b.active) fn(b);
 }
 export function deactivateBullet(b) { b.active = false; }
 
-/* 事件总线简易转发（避免顶部 import 造成循环） */
 function _emit(event, payload) {
-  // 延迟 import 避免与 core 的循环引用
   import('@/core.js').then(({ emit }) => emit(event, payload));
 }
 
@@ -607,14 +588,39 @@ function generateLightning(s, e, iter = 5, off = 3.0) {
   return pts;
 }
 
-export function spawnLightning(s, e, color, life = 0.15, forks = 2) {
-  const pts = generateLightning(s, e, 5, 4.5);
+/* 把一条闪电折线加入场景。alphaMul 用于叠加副线时降低强度 */
+function addLightningLine(pts, color, life, alphaMul) {
   const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: alphaMul,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
   const line = new THREE.Line(geo, mat);
   lightningGroup.add(line);
-  lightningList.push({ obj: line, life, maxLife: life });
+  lightningList.push({ obj: line, life, maxLife: life, alphaMul });
+}
 
+export function spawnLightning(s, e, color, life = 0.55, forks = 3) {
+  const pts = generateLightning(s, e, 6, 5.0);
+
+  /* 主闪电 */
+  addLightningLine(pts, color, life, 1.0);
+
+  /* 加粗副线：WebGL 的 linewidth 无效，靠 xz 平面小幅偏移叠 2 条制造厚度 */
+  const d = 0.22;
+  addLightningLine(
+    pts.map(p => p.clone().add(new THREE.Vector3( d, 0,  d * 0.6))),
+    color, life * 0.90, 0.60
+  );
+  addLightningLine(
+    pts.map(p => p.clone().add(new THREE.Vector3(-d, 0, -d * 0.6))),
+    color, life * 0.90, 0.60
+  );
+
+  /* 分叉：主枝 + 一条偏移副线 */
   for (let i = 0; i < forks; i++) {
     const idx = 2 + Math.floor(Math.random() * Math.max(1, pts.length - 4));
     const origin = pts[idx];
@@ -623,14 +629,14 @@ export function spawnLightning(s, e, color, life = 0.15, forks = 2) {
       Math.random() * 0.4 - 0.2,
       (Math.random() - 0.5) * 2
     ).normalize();
-    const len = 5 + Math.random() * 12;
+    const len = 6 + Math.random() * 14;
     const end2 = origin.clone().addScaledVector(dir, len);
-    const fpts = generateLightning(origin, end2, 3, 1.8);
-    const fgeo = new THREE.BufferGeometry().setFromPoints(fpts);
-    const fmat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
-    const fline = new THREE.Line(fgeo, fmat);
-    lightningGroup.add(fline);
-    lightningList.push({ obj: fline, life: life * 0.75, maxLife: life * 0.75 });
+    const fpts = generateLightning(origin, end2, 3, 2.0);
+    addLightningLine(fpts, color, life * 0.75, 0.80);
+    addLightningLine(
+      fpts.map(p => p.clone().add(new THREE.Vector3(d * 0.7, 0, 0))),
+      color, life * 0.70, 0.45
+    );
   }
 }
 
@@ -645,7 +651,11 @@ export function updateLightning(dt) {
       lightningList.splice(i, 1);
       continue;
     }
-    l.obj.material.opacity = l.life / l.maxLife;
+    const t = l.life / l.maxLife;
+    /* 前 40% 保持满亮，后 60% 淡出 */
+    const fade = t < 0.4 ? 1.0 : (t - 0.4) / 0.6;
+    const alphaMul = l.alphaMul !== undefined ? l.alphaMul : 1.0;
+    l.obj.material.opacity = alphaMul * fade;
   }
 }
 
@@ -779,9 +789,6 @@ export function spawnEnemyBullet(from, dir, dmg) {
 
 export function clearEnemyBullets() { enemyBullets.length = 0; }
 
-/**
- * 命中玩家时触发 `enemybullet:hitPlayer`，由 gameplay 层决定扣血 / 无敌判定。
- */
 export function updateEnemyBullets(dt) {
   ebMat.uniforms.uTime.value += dt;
 
